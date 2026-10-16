@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "飞书文档导出 Word",
+  "version": "0.2.0",
+  "description": "把飞书在线文档导出为高保真 Word(.docx)：完整还原排版、内嵌表格全量导出、默认去除水印。",
+  "permissions": ["downloads", "activeTab"],
+  "host_permissions": ["https://*.feishu.cn/*", "https://*.larkoffice.com/*"],
+  "background": {
+    "service_worker": "background/service-worker.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://*.feishu.cn/*", "https://*.larkoffice.com/*"],
+      "js": ["content/index.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "飞书文档导出 Word"
+  },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+E"
+      },
+      "description": "显示/隐藏导出面板"
+    }
+  }
+}

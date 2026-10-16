@@ -1,0 +1,394 @@
+/* 飞书导出 Word —— 悬浮控制层样式（渲染在 Shadow DOM 内，与宿主页面完全隔离） */
+
+:host {
+  all: initial;
+  font-family: 'PingFang SC', 'Microsoft YaHei', -apple-system, 'Segoe UI', sans-serif;
+  font-size: 12px;
+  color: #1f2329;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+.fde-root {
+  position: fixed;
+  right: 28px;
+  bottom: 32px;
+  z-index: 2147483000;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+/* ---------- 面板 ---------- */
+.fde-panel {
+  width: 300px;
+  padding: 0;
+  border-radius: 14px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  box-shadow: 0 18px 50px rgba(31, 35, 41, 0.18), 0 2px 8px rgba(31, 35, 41, 0.08);
+  animation: fde-rise 0.22s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+
+@keyframes fde-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.fde-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  background: linear-gradient(135deg, rgba(51, 112, 255, 0.1), rgba(51, 112, 255, 0.02));
+  border-bottom: 1px solid rgba(31, 35, 41, 0.06);
+}
+
+.fde-panel-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.fde-close {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #646a73;
+  font-size: 14px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.fde-close:hover {
+  background: rgba(31, 35, 41, 0.08);
+  color: #1f2329;
+}
+
+.fde-body {
+  padding: 12px 14px;
+  max-height: 56vh;
+  overflow: auto;
+}
+
+.fde-group {
+  margin-bottom: 12px;
+}
+
+.fde-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: #646a73;
+  margin-bottom: 6px;
+}
+
+.fde-row {
+  display: flex;
+  gap: 8px;
+}
+
+.fde-seg {
+  flex: 1;
+  display: flex;
+  padding: 3px;
+  border-radius: 8px;
+  background: rgba(31, 35, 41, 0.06);
+}
+
+.fde-seg button {
+  flex: 1;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #646a73;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.16s ease;
+}
+
+.fde-seg button.fde-on {
+  background: #fff;
+  color: #3370ff;
+  font-weight: 600;
+  box-shadow: 0 1px 4px rgba(31, 35, 41, 0.12);
+}
+
+.fde-select {
+  width: 100%;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid rgba(31, 35, 41, 0.14);
+  border-radius: 8px;
+  background: #fff;
+  color: #1f2329;
+  font-size: 12px;
+  outline: none;
+}
+
+.fde-select:focus {
+  border-color: #3370ff;
+  box-shadow: 0 0 0 3px rgba(51, 112, 255, 0.14);
+}
+
+.fde-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0;
+}
+
+.fde-switch span {
+  font-size: 12px;
+}
+
+.fde-toggle {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  border: none;
+  border-radius: 10px;
+  background: rgba(31, 35, 41, 0.22);
+  cursor: pointer;
+  transition: background 0.18s ease;
+}
+
+.fde-toggle::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: transform 0.18s ease;
+}
+
+.fde-toggle.fde-on {
+  background: #3370ff;
+}
+
+.fde-toggle.fde-on::after {
+  transform: translateX(16px);
+}
+
+.fde-foot {
+  display: flex;
+  gap: 8px;
+  padding: 10px 14px 14px;
+}
+
+.fde-btn {
+  flex: 1;
+  height: 34px;
+  border: none;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 0.16s ease, transform 0.16s ease;
+}
+
+.fde-btn:hover {
+  filter: brightness(1.06);
+}
+
+.fde-btn:active {
+  transform: scale(0.985);
+}
+
+.fde-btn-primary {
+  color: #fff;
+  background: linear-gradient(135deg, #3370ff, #245bdb);
+}
+
+.fde-btn-ghost {
+  color: #646a73;
+  background: rgba(31, 35, 41, 0.06);
+}
+
+/* ---------- 进度 ---------- */
+.fde-stages {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.fde-stage {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #646a73;
+}
+
+.fde-stage.fde-active {
+  color: #3370ff;
+  font-weight: 600;
+}
+
+.fde-stage.fde-done {
+  color: #34c724;
+}
+
+.fde-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid rgba(31, 35, 41, 0.16);
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  flex: none;
+}
+
+.fde-stage.fde-done .fde-dot {
+  border-color: #34c724;
+  background: #34c724;
+  color: #fff;
+}
+
+.fde-stage.fde-active .fde-dot {
+  border-color: #3370ff;
+  border-top-color: transparent;
+  animation: fde-spin 0.7s linear infinite;
+}
+
+@keyframes fde-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.fde-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(31, 35, 41, 0.08);
+  overflow: hidden;
+}
+
+.fde-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #3370ff, #6c9bff);
+  transition: width 0.25s ease;
+}
+
+/* ---------- 保存路径 ---------- */
+.fde-path {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(51, 112, 255, 0.08);
+}
+
+.fde-path-text {
+  flex: 1;
+  font-size: 11px;
+  line-height: 1.45;
+  color: #1f2329;
+  word-break: break-all;
+}
+
+.fde-copy {
+  flex: none;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid rgba(51, 112, 255, 0.3);
+  border-radius: 6px;
+  background: #fff;
+  color: #3370ff;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.16s ease;
+}
+
+.fde-copy:hover {
+  background: #e1eaff;
+}
+
+/* ---------- 结果 ---------- */
+.fde-result-ok {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(52, 199, 36, 0.1);
+  margin-bottom: 10px;
+}
+
+.fde-result-ok b {
+  color: #1f2329;
+  font-size: 12px;
+  display: block;
+}
+
+.fde-result-ok small {
+  color: #646a73;
+}
+
+.fde-check {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #34c724;
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-size: 14px;
+  flex: none;
+}
+
+.fde-degraded {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255, 136, 0, 0.1);
+  font-size: 12px;
+  color: #646a73;
+  max-height: 120px;
+  overflow: auto;
+}
+
+.fde-degraded li {
+  margin: 2px 0;
+}
+
+.fde-error {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(245, 74, 69, 0.1);
+  color: #f54a45;
+  font-size: 12px;
+  margin-bottom: 10px;
+}
+
+.fde-hint {
+  font-size: 11px;
+  color: #646a73;
+  line-height: 1.5;
+}

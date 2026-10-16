@@ -1,0 +1,27 @@
+{
+  "name": "feishu-docx-exporter",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Chrome MV3 extension that exports Feishu (Lark) online documents to high-fidelity Word(.docx) files without watermarks.",
+  "scripts": {
+    "build": "node build.mjs",
+    "watch": "node build.mjs --watch",
+    "pack": "node tools/pack.mjs",
+    "e2e": "node tools/e2e-export.mjs",
+    "check": "node tools/check-docx.mjs",
+    "test": "node tools/render-offline.mjs samples/runs/offline/offline.docx && node tools/check-styles.mjs samples/runs/offline/offline.docx",
+    "probe": "node tools/probe.mjs",
+    "shot": "node tools/screenshot-doc.mjs",
+    "diag": "node tools/diag-resources.mjs",
+    "fetch-doc": "node tools/fetch-doc.mjs"
+  },
+  "dependencies": {
+    "docx": "^9.11.0",
+    "jszip": "^3.10.1"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.10",
+    "playwright": "^1.56.0"
+  }
+}

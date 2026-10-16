@@ -1,0 +1,28 @@
+# 依赖与构建产物
+node_modules/
+dist/
+
+# 调试用 Chrome profile（含登录 Cookie，切勿提交；体积可达数 GB）
+.chrome-debug/
+.chrome-user/
+
+# 项目内部笔记（含客户信息与内部链接，不入库）
+.workbuddy/
+.codebuddy/
+
+# 交付产物
+output/
+
+# 抓包样本与迭代产物：含登录态请求与客户文档内容，一律不入库
+samples/*
+!samples/README.md
+
+*.log
+
+# 构建产物与交付件
+*.zip
+*.docx
+
+# 系统
+.DS_Store
+Thumbs.db

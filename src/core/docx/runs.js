@@ -7,7 +7,7 @@
  * 否则 run 级直接格式会盖住样式，用户在 Word 里改样式全文不生效。
  */
 import { ExternalHyperlink, Math as DocxMath, MathRun, ShadingType, TextRun } from 'docx';
-import { toHexColor } from '../../shared/util.js';
+import { sanitizeXmlText, toHexColor } from '../../shared/util.js';
 import { STYLE } from './styles.js';
 
 function applyCommon(target, run) {
@@ -30,7 +30,7 @@ function textRunsWithBreaks(text, props) {
   const parts = String(text).split('\n');
   return parts
     .map((part, index) =>
-      new TextRun({ ...props, text: part, ...(index > 0 ? { break: 1 } : {}) }),
+      new TextRun({ ...props, text: sanitizeXmlText(part), ...(index > 0 ? { break: 1 } : {}) }),
     )
     .filter((r) => r);
 }
@@ -60,7 +60,7 @@ export function runsToDocxChildren(runs) {
         children.push(
           new ExternalHyperlink({
             link: url,
-            children: [new TextRun({ ...props, text: run.text, style: 'Hyperlink' })],
+            children: [new TextRun({ ...props, text: sanitizeXmlText(run.text), style: 'Hyperlink' })],
           }),
         );
         continue;
@@ -71,7 +71,7 @@ export function runsToDocxChildren(runs) {
       const name =
         typeof run.mention === 'string' ? run.mention : run.mention?.name ?? run.text ?? '';
       // @提及的品牌蓝属于保留白名单（在线就是蓝色），但仍不写字号/字体
-      children.push(new TextRun({ text: `@${name}`, bold: true, color: '3370FF' }));
+      children.push(new TextRun({ text: sanitizeXmlText(`@${name}`), bold: true, color: '3370FF' }));
       continue;
     }
 

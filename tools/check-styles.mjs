@@ -191,6 +191,21 @@ if (captionStarts.length) {
     `${captionStarts.length} 个代码块标题，位置异常 ${misplaced.length} 个`);
 }
 
+// ---------- F 产物可打开性 ----------
+// XML 1.0 不允许 0x00-0x08 / 0x0B / 0x0C / 0x0E-0x1F / U+FFFE / U+FFFF。
+// 文档正文里夹带这类字符时，原样写进 <w:t> 会让 Word 报「文件损坏」直接打不开
+// （实测某模板正文含一个 0x08 退格符）。这里做逐部件的字符合法性扫描。
+const ILLEGAL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/;
+const badParts = [];
+for (const [name, buf] of entries) {
+  if (!/\.(xml|rels)$/.test(name)) continue;
+  const content = buf.toString('utf8');
+  const m = content.match(ILLEGAL);
+  if (m) badParts.push(`${name}(0x${m[0].charCodeAt(0).toString(16)})`);
+}
+check('F1', 'XML 部件不含非法控制字符', badParts.length === 0,
+  badParts.length ? `违规: ${badParts.join(', ')}` : `已扫描 ${[...entries.keys()].filter((n) => /\.(xml|rels)$/.test(n)).length} 个部件`);
+
 // ---------- 输出 ----------
 console.log(`文件: ${file}`);
 console.log(`段落 ${paras} · 表格 ${tables} · 图片 ${drawings} · 标题 ${headingParas}\n`);

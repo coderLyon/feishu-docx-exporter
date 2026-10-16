@@ -38,6 +38,7 @@
 
 | 现象 | 原因与处理 |
 | --- | --- |
+| **Word 说「无法打开/文件损坏」，一点都打不开** | 正文里夹带 XML 非法控制字符（0x00-0x08、0x0B、0x0C、0x0E-0x1F、U+FFFE/FFFF）。实测某模板正文含一个 `0x08` 退格符，原样写进 `<w:t>` 就废了。修复：`sanitizeXmlText()`（`src/shared/util.js`）在文本抽取咽喉处净化（`text.js` 的富文本解析 + `runs.js` 兜底 + 附件名）。**守卫**：`check-styles.mjs` 的 `F1` 会逐部件扫描 XML 字符合法性 |
 | Word 打开提示「文档需要修复」 | 常见三种：① 一个 `pPr` 里出现两个 `pStyle`（如自定义样式 id 又叠加了 ListParagraph）；② 引用了 styles.xml 中不存在的样式 id；③ 非法枚举值（如 `w:jc w:val="1"`，应为字符串 `"center"`）。`check-styles.mjs` 的 B3/B8 专门查这些 |
 | PowerShell 脚本里的中文变乱码 | `.ps1` 无 UTF-8 BOM 时 PowerShell 5.1 会按本地编码解析 → 脚本内避免使用中文字面量，改用 Word 常量（如 `Styles.Item(-2)` 表示「标题 1」） |
 | Word COM 调用报「无法转换参数」 | COM 参数**不要加 `[ref]`**；`ExportAsFixedFormat` 的 Range 必须是 `0`（`wdExportAllDocument`），传 1 会报「值不在预期范围」 |

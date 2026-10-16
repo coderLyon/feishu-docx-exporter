@@ -97,3 +97,21 @@ export function stripWatermarkParams(url) {
     return url;
   }
 }
+
+/**
+ * 净化要写进 OOXML 的文本。
+ *
+ * XML 1.0 不允许 0x00-0x08 / 0x0B / 0x0C / 0x0E-0x1F 这些控制字符，
+ * 也不允许 U+FFFE / U+FFFF 与落单的代理项。飞书文档里确实可能夹带这类字符
+ * （实测某模板正文里有一个 0x08 退格符），一旦原样写进 <w:t>，
+ * 产出的 docx 会「无法打开」——Word 报的是文件损坏，而不是提示非法字符。
+ */
+export function sanitizeXmlText(input) {
+  const text = String(input ?? '');
+  return text
+    // 非法控制字符与保留码位
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g, '')
+    // 落单的代理项（合法的 emoji 是成对代理项，必须保留）
+    .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/g, '\uFFFD')
+    .replace(/(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '\uFFFD');
+}

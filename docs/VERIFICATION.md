@@ -59,6 +59,10 @@ node tools/check-styles.mjs samples/runs/offline/offline.docx
 - `docx2pdf.ps1` 转换成功即隐式证明（坏 XML 会让 Word 报错）
 - 新增 `$doc.ComputeStatistics(2)` 输出 `PAGE_COUNT`，断言「Word 页数 == pymupdf 页数 == meta.pageCount」
 
+### F 产物可打开性
+- `F1` **XML 部件不含非法控制字符**：逐部件扫描 0x00-0x08 / 0x0B / 0x0C / 0x0E-0x1F / U+FFFE / U+FFFF。
+  这些字符一旦进入 `<w:t>`，Word 会报「文件损坏」彻底打不开（实测某模板正文含 0x08，见 CHANGELOG r034）
+
 ### 深度验证（样式可全文改）
 ```powershell
 powershell -File tools\verify-style-editable.ps1 -Src <docx> -PdfOut <deep.pdf>

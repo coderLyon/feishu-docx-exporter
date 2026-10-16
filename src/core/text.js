@@ -1,3 +1,5 @@
+import { sanitizeXmlText } from '../shared/util.js';
+
 /**
  * 飞书富文本（attributed text）解析。
  *
@@ -116,7 +118,7 @@ export function parseAttributedText(textBlock) {
     const segment = texts[segmentKey] ?? '';
     const pattern = attribs[segmentKey];
     if (!pattern) {
-      if (segment) runs.push({ text: segment });
+      if (segment) runs.push({ text: sanitizeXmlText(segment) });
       continue;
     }
 
@@ -127,7 +129,7 @@ export function parseAttributedText(textBlock) {
       cursor += op.len;
       if (!slice) continue;
 
-      const run = { text: slice };
+      const run = { text: sanitizeXmlText(slice) };
       for (const attrId of op.attrs) {
         const entry = pool[attrId];
         if (!entry) continue;

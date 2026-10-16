@@ -2,6 +2,7 @@
 import { AlignmentType, ExternalHyperlink, ImageRun, Paragraph, TextRun } from 'docx';
 import { PX_TO_EMU } from '../../shared/constants.js';
 import { t } from '../../shared/messages.js';
+import { sanitizeXmlText } from '../../shared/util.js';
 import { STYLE } from '../docx/styles.js';
 
 /** 按页面宽度等比缩放 */
@@ -59,7 +60,7 @@ export function renderImage(node, ctx) {
 /** 附件块：以链接占位 */
 export function renderFile(node, ctx) {
   const file = node.data?.file ?? {};
-  const name = file.name ?? '附件';
+  const name = sanitizeXmlText(file.name ?? '附件');
   const sizeKb = file.size ? ` (${Math.round(file.size / 1024)} KB)` : '';
   const url = file.token ? `https://${ctx.host}/space/api/box/stream/download/all/${file.token}` : '';
   ctx.report.degraded.push(t('fileAsLink', ctx.lang)(name));

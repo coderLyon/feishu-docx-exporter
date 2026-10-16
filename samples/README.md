@@ -56,3 +56,14 @@ runs/
 | `.chrome-debug/`（废弃 profile） | 375 MB | 已删 |
 | `samples/` | 171 MB | 51 MB（旧轮次只留 docx+json；删前端静态包与埋点） |
 | `samples/out/` | 一次性诊断脚本 + 临时解包目录 | 已清，仅留日志 |
+
+## 五、2026-10-17 二次清理
+
+| 项 | 处理 |
+| --- | --- |
+| `runs/*/pair/`（比对配对图，各约 14MB，可用 `make-manifest.mjs` 再生） | 只保留 r020 一份作为格式样本，其余删除（-28MB） |
+| `runs/r021`、`runs/r025` 的 `word/`（与 r020 同文档的重复验证轮） | 删除，保留 r020 作为基准 |
+| `samples/out/` 日志 | 只保留最近 25 个 |
+| 多文档体检 | `cov/`（doc1-3）、`cov4/`（竞品功能调研）、`cov5/`（产品功能 Checklist 超宽表格） |
+
+当前 samples 体积：102MB（其中 runs 约 95MB，主要是 r020 的 25 页 PNG + 配对图）。

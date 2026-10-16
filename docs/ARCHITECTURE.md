@@ -88,6 +88,10 @@ Packer.toBlob() → content script 建 blob URL → service-worker chrome.downlo
 11. **离屏画布必须 `willReadFrequently`**；不要读页面画布像素。
 12. **块渲染异常一律捕获降级**进 `report.degraded / errors`，绝不中断整体导出。
 
+13. **文档标题不是独立块**：飞书把标题挂在根 `page` 块的 text 上。`/docx/<token>` 链接取不到 `node.title`（`get_node` 只服务 wiki），必须用 `extractPageTitle()` 从根块兜底，否则标题会退化成「未命名文档」。
+14. **飞书图片的 src 多为 `blob:` URL**：content script 的 `fetch` 受页面 CSP 限制会失败 → 采集必须**优先走 canvas**（读已解码的 `<img>`），跨域直链才退 fetch。
+15. **单元格内的图片按列宽缩放**（`ctx.cellWidthPx`），不能用版心宽度，否则撑破表格。
+
 ## 五、尚未打通的两条路（附证据）
 
 ### 内嵌电子表格 → 原生表格

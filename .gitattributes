@@ -1,6 +1,10 @@
 # 统一换行符：仓库内一律 LF，检出到 Windows 时按需转换
 * text=auto eol=lf
 
+# PowerShell 脚本保持 CRLF + 必须是 UTF-8 with BOM
+# （无 BOM 时 PowerShell 5.1 会把中文读成乱码，导致语法错误）
+*.ps1 text eol=crlf
+
 # 二进制
 *.png binary
 *.docx binary

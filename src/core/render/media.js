@@ -121,7 +121,17 @@ export function renderWhiteboard(node, ctx) {
 
 /** 多维表格：以链接占位 */
 export function renderBitable(node, ctx) {
-  const token = (node.data?.token ?? '').split('_')[0];
+  // bitable / base_refer 的 token 形如 <baseToken>_<tableId>，
+  // 第一个下划线之前是 base token；有 view_id 时一并带上，点开能落到相同视图
+  const raw = node.data?.token ?? '';
+  const token = raw.split('_')[0];
+  const tableId = raw.includes('_') ? raw.split('_').slice(1).join('_') : '';
+  const viewId = node.data?.view_id ?? '';
+  const query = [tableId ? `table=${tableId}` : '', viewId ? `view=${viewId}` : '']
+    .filter(Boolean)
+    .join('&');
+  const url = token ? `https://${ctx.host}/base/${token}${query ? `?${query}` : ''}` : '';
+
   ctx.report.degraded.push(t('bitableAsLink', ctx.lang)());
   return [
     new Paragraph({
@@ -129,7 +139,7 @@ export function renderBitable(node, ctx) {
         new TextRun({ text: t('bitableLabel', ctx.lang)(), bold: true }),
         token
           ? new ExternalHyperlink({
-              link: `https://${ctx.host}/base/${token}`,
+              link: url,
               children: [new TextRun({ text: token, style: 'Hyperlink' })],
             })
           : new TextRun({ text: t('noToken', ctx.lang)() }),

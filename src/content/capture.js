@@ -463,6 +463,10 @@ export async function collectResources({ onProgress } = {}) {
     onProgress?.({ stage: 'collect', percent: 22, detail: '文档尚未渲染完成，仍尝试采集…' });
   }
 
+  // 先慢速预热滚一遍：内嵌电子表格/画板是重型懒挂载块，
+  // 扫描节奏太快时它们还没渲染就翻过去了（实测某文档 11 张内嵌表格全部漏采）
+  await warmUpScroll(scroller, onProgress);
+
   await scanPass(scroller, state, onProgress);
   await scanPass(scroller, state, onProgress);
 
@@ -487,6 +491,31 @@ export async function collectResources({ onProgress } = {}) {
 }
 
 /** 单遍滚动扫描 */
+/**
+ * 预热滚动：以较慢的节奏（半步长 / 450ms）把文档完整滚一遍，
+ * 让懒挂载的重型块（内嵌电子表格、画板）真正渲染出来，再进入正式扫描。
+ *
+ * 注意 scrollHeight 会随内容挂载而增长，所以循环里要重新读取而不是预先算总数。
+ */
+async function warmUpScroll(scroller, onProgress) {
+  const step = Math.max(240, Math.floor(scroller.clientHeight * 0.5));
+  let y = 0;
+  let guard = 0;
+  scroller.scrollTop = 0;
+  await sleep(400);
+
+  while (y <= scroller.scrollHeight && guard < 400) {
+    guard += 1;
+    scroller.scrollTop = y;
+    await sleep(450);
+    onProgress?.({ stage: 'warmup', loaded: Math.min(y, scroller.scrollHeight), total: scroller.scrollHeight });
+    y += step;
+  }
+
+  scroller.scrollTop = 0;
+  await sleep(500);
+}
+
 async function scanPass(scroller, state, onProgress) {
   scroller.scrollTop = 0;
   await sleep(700);

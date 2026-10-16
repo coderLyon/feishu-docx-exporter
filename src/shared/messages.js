@@ -53,3 +53,27 @@ export function t(key, lang = 'zh') {
   const dict = MSG[lang] ?? MSG.zh;
   return dict[key] ?? MSG.zh[key] ?? (() => key);
 }
+
+/**
+ * 飞书专有块的占位文案（Word 无对应形式，按用户约定不强求兼容，
+ * 但要说清「这是什么、去哪看」，而不是笼统的「未支持的内容块」）。
+ */
+const FEISHU_ONLY = {
+  zh: {
+    chart_refer_host_perm: () => '图表（飞书图表，需在原文档中查看）',
+    task_list: () => '任务列表（飞书任务，Word 无对应形式）',
+    synced_source: () => '同步块（源内容为空）',
+  },
+  en: {
+    chart_refer_host_perm: () => 'Chart (Feishu chart, view it in the original document)',
+    task_list: () => 'Task list (Feishu Tasks, no Word equivalent)',
+    synced_source: () => 'Synced block (source is empty)',
+  },
+};
+
+export function feishuOnly(type, lang = 'zh') {
+  const dict = FEISHU_ONLY[lang] ?? FEISHU_ONLY.zh;
+  const fn = dict[type];
+  if (fn) return fn();
+  return t('unsupported', lang)(type);
+}

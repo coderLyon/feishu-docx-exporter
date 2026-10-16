@@ -139,13 +139,20 @@ check('B8', '无非法对齐枚举 w:jc w:val="1"', count(/<w:jc w:val="1"\/>/g)
 const text = [...xml.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)].map((m) => m[1]).join('');
 const paraTexts = paraBlocks.map((p) => [...p.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)].map((m) => m[1]).join(''));
 
-const quoteTexts = [
-  '表中400、401、500指响应体中的业务code',
-  '通信无响应时不存在业务code',
-  '无响应、网关错误及无法识别响应场景的最后一列为设备端处理说明',
-];
-const quoteHit = quoteTexts.filter((t) => text.includes(t));
-check('D1', '引用块 3 条 bullet 文字全部存在', quoteHit.length === 3, `命中 ${quoteHit.length}/3`);
+// D1（通用）：引用样式段落必须有文字。
+// 这里守护的是历史上真实出现过的缺陷——引用块只剩左边框、内容全空
+//（docx 的 Paragraph 没有 options 属性，重建段落会变成空段）。
+// 不能写死某一篇文档的引用文案，否则换文档必误报。
+const quoteParas = paraBlocks.filter((p) => /<w:pStyle w:val="Quote"\/>/.test(p));
+const emptyQuotes = quoteParas.filter(
+  (p) => [...p.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)].map((m) => m[1]).join('').trim() === '',
+);
+if (quoteParas.length) {
+  // 判据：不能「整块引用全空」。单独的空段落是作者在引用里留的空行，属正常内容，
+  // 不应误报（doc3 的模板里就有这种空行）
+  check('D1', '引用块内容未整块丢失', emptyQuotes.length < quoteParas.length,
+    `${quoteParas.length} 个引用段落，其中空白 ${emptyQuotes.length} 个`);
+}
 
 // 通用性：只在文档里确实存在「带 seq 的标题 + 无 seq 标题」时才校验编号行为，
 // 换一篇文档不应因为「没有附件章节」而误报
@@ -160,18 +167,29 @@ const h1Texts = paraBlocks
   .filter((p) => /<w:pStyle w:val="FdeHeading1"/.test(p))
   .map((p) => [...p.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)].map((m) => m[1]).join(''));
 const numbered = h1Texts.filter((t) => /^\d+[.．]/.test(t));
-if (numbered.length) {
-  // 编号必须从 1 开始且连续（1,2,3…），缺失/跳号即为异常
+if (numbered.length > 1) {
+  // 通用判据：编号必须严格递增（不能重复或倒退）。
+  // 不要求「从 1 开始」——作者可能手打了「0. 项目背景介绍」这类无 seq 的标题，
+  // 它不参与自动编号，此时自动编号从 1 续上也是正确的
   const seq = numbered.map((t) => Number(t.match(/^(\d+)/)[1]));
-  const ok = seq.every((n, i) => n === i + 1);
-  check('D3', 'H1 编号从 1 起且连续', ok, `序列 ${seq.join(',')}`);
+  const ok = seq.every((n, i) => i === 0 || n > seq[i - 1]);
+  check('D3', 'H1 编号严格递增（无重复/倒退）', ok, `序列 ${seq.join(',')}`);
 }
 
-const captionIdx = text.indexOf('PLAN_WO_JDZJ 原建表语句');
-const firstTblAfter = xml.indexOf('<w:tbl>', xml.indexOf('PLAN_WO_JDZJ 原建表语句'));
-const captionPos = xml.indexOf('PLAN_WO_JDZJ 原建表语句');
-check('D4', '代码块 caption 排在代码块之前', captionPos > 0 && (firstTblAfter < 0 || captionPos < firstTblAfter),
-  `caption@${captionPos} tbl@${firstTblAfter}`);
+// D4（通用）：每个代码块标题（FdeCodeCaption）后面必须紧跟代码块（渲染为单格表格）。
+// 不写死具体标题文字——历史上出现过「标题被挪到代码块下方」的缺陷。
+const captionStarts = [...xml.matchAll(/<w:p[ >][\s\S]*?<w:pStyle w:val="FdeCodeCaption"\/>/g)]
+  .map((m) => m.index);
+if (captionStarts.length) {
+  const misplaced = captionStarts.filter((at) => {
+    const nextTbl = xml.indexOf('<w:tbl>', at);
+    const nextCaption = captionStarts.find((c) => c > at) ?? Infinity;
+    // 下一个表格必须在下一个标题之前出现，否则说明标题落到了代码块之后
+    return nextTbl < 0 || nextTbl > nextCaption;
+  });
+  check('D4', '代码块标题在其代码块之前', misplaced.length === 0,
+    `${captionStarts.length} 个代码块标题，位置异常 ${misplaced.length} 个`);
+}
 
 // ---------- 输出 ----------
 console.log(`文件: ${file}`);

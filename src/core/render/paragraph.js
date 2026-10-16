@@ -1,5 +1,8 @@
 /** 段落类块渲染：正文、标题（含自动编号）、列表、待办、引用、高亮块、代码块、分割线 */
-import { t } from '../../shared/messages.js';
+import { feishuOnly, t } from '../../shared/messages.js';
+
+/** 占位文字颜色（与既有的橙色降级提示区分：飞书专有内容用中性灰） */
+const MUTED_COLOR = '646A73';
 import {
   AlignmentType,
   BorderStyle,
@@ -273,6 +276,22 @@ export function renderDivider() {
       text: '',
       style: STYLE.body,
       border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: 'D0D3D6', space: 1 } },
+    }),
+  ];
+}
+
+/** 未知/不支持块的兜底占位 */
+/**
+ * 飞书专有内容的占位（Word 无对应形式，不做强行兼容）。
+ * 与 renderPlaceholder 的区别：文案说清「这是什么」，而不是「未支持的块 xxx」。
+ */
+export function renderFeishuOnly(node, ctx) {
+  const label = feishuOnly(node.type, ctx.lang);
+  ctx.report.degraded.push(label);
+  return [
+    new Paragraph({
+      children: [new TextRun({ text: `[${label}]`, italics: true, color: MUTED_COLOR })],
+      style: styleIdFor(ctx),
     }),
   ];
 }

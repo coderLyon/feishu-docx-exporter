@@ -7,6 +7,7 @@ import {
   renderCode,
   renderDivider,
   renderOrdered,
+  renderFeishuOnly,
   renderPlaceholder,
   renderQuoteContainer,
   renderTextLike,
@@ -138,7 +139,18 @@ export function renderNode(node, ctx, level = 0) {
       case 'mindnote':
         return renderWhiteboard(node, ctx);
       case 'bitable':
+      case 'base_refer':
+        // base_refer 是「引用某个多维表格视图」，与 bitable 同源，复用同一渲染（带 table/view 参数）
         return renderBitable(node, ctx);
+      case 'synced_source':
+        // 同步块：源块的内容就在它的 children 里，直接渲染真实内容
+        return node.children?.length
+          ? ctx.renderChildren(node.children, level)
+          : renderFeishuOnly(node, ctx);
+      case 'chart_refer_host_perm':
+      case 'task_list':
+        // 飞书专有内容（图表引用需宿主权限 / 飞书任务），Word 无对应形式 → 说明性占位
+        return renderFeishuOnly(node, ctx);
       case 'grid':
       case 'grid_column':
       case 'view':

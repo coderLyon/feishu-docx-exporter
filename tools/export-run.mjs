@@ -27,7 +27,12 @@ const RUN_ID = process.argv[2] ?? 'r001';
 const ROOT = path.resolve(import.meta.dirname, '..');
 const DIST = path.join(ROOT, 'dist');
 const RUN_DIR = path.join(ROOT, 'samples', 'runs', RUN_ID);
-const DOC_URL_KEY = new URL(TARGET).pathname.split('/').filter(Boolean)[1] ?? '';
+// 页面标识取 URL 路径的**最后一段**（即文档 token）：
+// /wiki/<token> 与 /docx/<token> 都成立；此前取 [1] 在 /docx/ 下会取到字面量 "docx"
+const DOC_URL_KEY = (() => {
+  const parts = new URL(TARGET).pathname.split('/').filter(Boolean);
+  return parts[parts.length - 1] ?? '';
+})();
 
 /** 装载扩展（Extensions 域只在 browser 级可用，必须显式去掉 sessionId） */
 async function ensureExtension(cdp) {

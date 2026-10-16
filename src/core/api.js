@@ -210,9 +210,30 @@ export async function fetchSheetClientVars({ sheetToken, signal, body = {} } = {
  * 按页面地址自动解析并拉取完整文档数据。
  * 返回 { node, pages, doc }，其中 doc 为合并后的 { blockMap, blockSequence, metaMap }。
  */
+/**
+ * 从块数据里取文档大标题：根 `page` 块（没有则用 blockSequence 首块）的文本。
+ * 飞书文档模型里，标题不是独立块，而是挂在根块 text 上。
+ */
+function extractPageTitle(doc) {
+  const map = doc?.blockMap ?? {};
+  const seq = doc?.blockSequence ?? [];
+  const candidates = [
+    map[doc?.documentId],
+    ...seq.slice(0, 3).map((id) => map[id]),
+  ].filter(Boolean);
+  const root = candidates.find((b) => b?.data?.type === 'page') ?? candidates[0];
+  const texts = root?.data?.text?.initialAttributedTexts?.text ?? {};
+  return Object.keys(texts)
+    .sort((a, b) => Number(a) - Number(b))
+    .map((k) => texts[k] ?? '')
+    .join('')
+    .trim();
+}
+
 export async function loadDocument({ url = location.href, signal, onProgress } = {}) {
   const target = parseDocUrl(url);
   onProgress?.({ stage: 'resolve', detail: target.kind });
+
 
   let node;
   if (target.kind === 'wiki') {
@@ -232,5 +253,13 @@ export async function loadDocument({ url = location.href, signal, onProgress } =
   });
 
   const doc = mergeClientVars(pages);
+
+  // 标题兜底：/docx/<token> 链接拿不到 node.title（get_node 只服务 wiki），
+  // 但文档大标题就在根 `page` 块的文本里。不兜底会退化成「未命名文档」，
+  // 而且会被当成大标题写进产物（实测模板文档全部中招）。
+  if (!node.title) {
+    node.title = extractPageTitle(doc);
+  }
+
   return { node, pages, doc };
 }

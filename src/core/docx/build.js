@@ -22,13 +22,16 @@ export async function buildDocx({ title, children, options, orderedInstances }) 
   const size = PAGE_SIZES[options.pageSize] ?? PAGE_SIZES.A4;
   const margin = PAGE_MARGINS[options.pageMargin] ?? PAGE_MARGINS.normal;
 
-  // 文档标题对齐在线样式：左对齐、30px(22.5pt)，字号/字体/行距全部由 FdeTitle 样式承载
-  const front = [
-    new Paragraph({
-      children: [new TextRun({ text: title || '未命名文档' })],
-      style: STYLE.title,
-    }),
-  ];
+  // 文档标题对齐在线样式：左对齐、30px(22.5pt)，字号/字体/行距全部由 FdeTitle 样式承载。
+  // 取不到标题时**不写**占位文字：「未命名文档」是文件名兜底用的，写进正文会变成假大标题
+  const front = title
+    ? [
+        new Paragraph({
+          children: [new TextRun({ text: title })],
+          style: STYLE.title,
+        }),
+      ]
+    : [];
 
   const body = options.includeToc
     ? [

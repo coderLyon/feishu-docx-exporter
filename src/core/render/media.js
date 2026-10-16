@@ -15,7 +15,11 @@ function fitImage(width, height, maxWidthPx) {
 function imageParagraph(resource, ctx, caption) {
   if (!resource?.data) return [];
 
-  const { width, height } = fitImage(resource.width, resource.height, ctx.contentWidthPx);
+  // 在表格单元格里按列宽缩放（再留一点单元格内边距），否则会撑破表格
+  const available = ctx.cellWidthPx
+    ? Math.max(60, Math.min(ctx.contentWidthPx, ctx.cellWidthPx - 12))
+    : ctx.contentWidthPx;
+  const { width, height } = fitImage(resource.width, resource.height, available);
   const run = new ImageRun({
     type: resource.mimeType?.includes('jpeg') ? 'jpg' : 'png',
     data: resource.data,

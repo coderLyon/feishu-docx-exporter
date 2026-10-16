@@ -96,8 +96,11 @@ export function renderTable(node, ctx) {
 
       let children;
       const cellBlock = info?.block_id ? ctx.byId.get(info.block_id) : null;
-      // 进入单元格：切换为表格专用字号/行距
+      // 进入单元格：切换为表格专用字号/行距，并记录该列可用宽度。
+      // 单元格里的图片必须按列宽缩放，否则会按版心宽度撑破表格（实测某文档图示列被拉成竖条）
       ctx.tableDepth += 1;
+      const prevCellWidth = ctx.cellWidthPx;
+      ctx.cellWidthPx = Math.round((widths[colIndex] ?? ctx.pageContentWidth) / 15);
       try {
         if (cellBlock && cellBlock.children?.length) {
           children = ctx.renderChildren(cellBlock.children, 0);
@@ -106,6 +109,7 @@ export function renderTable(node, ctx) {
         }
       } finally {
         ctx.tableDepth -= 1;
+        ctx.cellWidthPx = prevCellWidth;
       }
       if (!children.length) children.push(new Paragraph({ text: '', style: STYLE.tableText }));
 

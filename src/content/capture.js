@@ -36,19 +36,53 @@ export function findDocScroller() {
 }
 
 /** 下载 <img> 的 blob URL 为字节 */
+/** 从已解码的 <img> 直接读像素（canvas 路径） */
+function readImageViaCanvas(img) {
+  try {
+    const width = img.naturalWidth;
+    const height = img.naturalHeight;
+    if (!width || !height) return null;
+    const { canvas, context } = createCanvas2d(width, height);
+    context.drawImage(img, 0, 0, width, height);
+    // 同源图（含 blob:https://<当前站点>/…）不会被污染，toDataURL 可正常返回；
+    // 跨域直链会抛 SecurityError，交给下面的 fetch 分支处理
+    const dataUrl = canvas.toDataURL('image/png');
+    return {
+      data: dataUrlToBytes(dataUrl),
+      mimeType: 'image/png',
+      width,
+      height,
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function fetchImageBytes(img) {
   const src = img.currentSrc || img.src;
   if (!src) return null;
-  const response = await fetch(src, { credentials: 'include' });
-  if (!response.ok) return null;
-  const blob = await response.blob();
-  const data = new Uint8Array(await blob.arrayBuffer());
-  return {
-    data,
-    mimeType: blob.type || 'image/png',
-    width: img.naturalWidth || Math.round(img.getBoundingClientRect().width),
-    height: img.naturalHeight || Math.round(img.getBoundingClientRect().height),
-  };
+
+  // 优先走 canvas：飞书大量图片的 src 是 blob:https://<站点>/…，
+  // 而 content script 里的 fetch 受页面 CSP 约束（connect-src 不含 blob:）会直接失败，
+  // 表现为「图片未能从页面获取」。canvas 读取已解码的图片不经过网络与 CSP。
+  const viaCanvas = readImageViaCanvas(img);
+  if (viaCanvas) return viaCanvas;
+
+  // 跨域直链（canvas 会因污染而失败）退回 fetch
+  try {
+    const response = await fetch(src, { credentials: 'include' });
+    if (!response.ok) return null;
+    const blob = await response.blob();
+    const data = new Uint8Array(await blob.arrayBuffer());
+    return {
+      data,
+      mimeType: blob.type || 'image/png',
+      width: img.naturalWidth || Math.round(img.getBoundingClientRect().width),
+      height: img.naturalHeight || Math.round(img.getBoundingClientRect().height),
+    };
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -497,6 +531,19 @@ export async function collectResources({ onProgress } = {}) {
  *
  * 注意 scrollHeight 会随内容挂载而增长，所以循环里要重新读取而不是预先算总数。
  */
+/**
+ * 等单张图片加载完成（最多 timeoutMs）。
+ * 飞书图片是懒加载 + 异步下载，滚动到位时往往还没 decode 完。
+ */
+async function waitForImage(img, timeoutMs = 1800) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (img.complete && img.naturalWidth >= 4) return true;
+    await sleep(150);
+  }
+  return img.complete && img.naturalWidth >= 4;
+}
+
 async function warmUpScroll(scroller, onProgress) {
   const step = Math.max(240, Math.floor(scroller.clientHeight * 0.5));
   let y = 0;
@@ -536,6 +583,11 @@ async function scanPass(scroller, state, onProgress) {
 
     // 图片
     for (const img of document.querySelectorAll('.image-block-container img')) {
+      // 图片是异步加载的：刚滚到视口时 naturalWidth 还是 0，
+      // 直接跳过就会漏采（实测某文档 2 张图全丢）。这里给它一点时间加载完再判断。
+      if (!img.complete || img.naturalWidth < 4) {
+        await waitForImage(img, 1800);
+      }
       const src = img.currentSrc || img.src;
       if (!src || state.seenImages.has(src) || img.naturalWidth < 4) continue;
       state.seenImages.add(src);

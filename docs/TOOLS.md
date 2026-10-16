@@ -15,6 +15,7 @@
 
 | 脚本 | 用法 | 说明 |
 | --- | --- | --- |
+| `tools/open-doc.mjs` | `node tools/open-doc.mjs <URL>` | 把已打开的调试 Chrome 导航到指定文档（复用同一标签页；**不要关闭唯一标签页**，否则窗口会一起关掉） |
 | `tools/serve-chrome.mjs` | `node tools/serve-chrome.mjs [文档URL]` | **后台常驻启动 Chrome**（远程调试端口 9222，profile `.chrome-user`）。必须用后台任务持有，否则 spawn 的进程会被回收 |
 | `tools/export-run.mjs` | `node tools/export-run.mjs r021 [--reload]` | 真实加载扩展跑一次导出，产出 `samples/runs/<id>/source.docx` |
 | `tools/check-styles.mjs` | `node tools/check-styles.mjs <docx> [--json f] [--expect tables=23]` | 样式/结构断言，退出码 0 通过 / 1 失败 / 2 用法错误 |
@@ -37,6 +38,17 @@
 | `tools/browser.mjs` | 共享常量（ROOT、默认文档 URL 等） |
 | `tools/launch-chrome.mjs` | 单独启动一个带调试端口的 Chrome |
 | `tools/ext-load.mjs` | 通过 CDP `Extensions.loadUnpacked` 装载扩展（Chrome 137+ 已禁用 `--load-extension`） |
+
+
+## 四·五、多文档体检（通用性验证）
+
+| 脚本 | 用法 | 说明 |
+| --- | --- | --- |
+| `tools/multi-doc-audit.mjs` | `node tools/multi-doc-audit.mjs [--outdir=samples/cov] <url1> [url2] ...` | 逐篇抓块数据 → 统计块类型覆盖率与未支持类型。支持清单直接从渲染分发器的 switch 提取，避免与代码漂移 |
+| `tools/coverage.mjs` | `node tools/coverage.mjs [doc.json]` | 就本地已有的一份块数据做同样的覆盖率体检（不用开浏览器） |
+
+> 换文档测试是发现「特化代码」的唯一可靠手段——本轮一次就暴露了 4 类未支持块、
+> 1 个采集缺陷（重型块漏采）、3 处断言特化。
 
 ## 四、探测 / 研究 / 诊断（日常迭代不需要）
 

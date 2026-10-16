@@ -1,0 +1,65 @@
+﻿# 一键推送本仓库到 GitHub（含代理与认证预检）
+#
+#   powershell -ExecutionPolicy Bypass -File tools\push-to-github.ps1
+#   powershell ... -Repo my-name -Private -Proxy http://127.0.0.1:7890
+#
+# 做的事：设置代理 → 检查 gh 登录 → 没有仓库就创建 → 关联 remote → 推送
+param(
+    [string]$Repo = "feishu-docx-exporter",
+    [string]$Proxy = "http://127.0.0.1:7890",
+    [switch]$Private
+)
+
+# gh 命令会把「未登录」等信息写到 stderr，用 Stop 会被当成终止错误直接中断，
+# 因此这里统一用 Continue，改为按退出码/输出内容判断
+$ErrorActionPreference = 'Continue'
+$root = Split-Path -Parent $PSScriptRoot
+Set-Location $root
+
+# 1) 代理：本机 github.com 直连不通，必须走本地代理（Clash 默认 7890）
+$env:HTTPS_PROXY = $Proxy
+$env:HTTP_PROXY = $Proxy
+Write-Host "[1/4] 代理已设为 $Proxy"
+
+$probe = curl.exe -s -o NUL -w "%{http_code}" --max-time 10 -x $Proxy https://github.com
+if ($probe -ne "200") {
+    Write-Host "       x 代理不可用（返回 $probe）。请确认代理在运行，或用 -Proxy 指定正确地址。"
+    exit 1
+}
+Write-Host "       v 代理连通 github.com"
+
+# 2) gh 认证
+$auth = gh auth status 2>&1 | Out-String
+if ($auth -notmatch "Logged in to github.com") {
+    Write-Host "[2/4] 尚未登录 GitHub。请先执行（本窗口内已带好代理）："
+    Write-Host "      gh auth login --hostname github.com --git-protocol https --web"
+    exit 2
+}
+Write-Host "[2/4] v 已登录 GitHub"
+
+# 让 git 复用 gh 的凭据（写入 git 的 credential.helper）
+gh auth setup-git 2>&1 | Out-Null
+
+# 3) 仓库是否存在
+$owner = (gh api user --jq .login)
+$exists = $false
+try { gh repo view "$owner/$Repo" --json name | Out-Null; $exists = $true } catch { $exists = $false }
+
+if (-not $exists) {
+    $vis = if ($Private) { "--private" } else { "--public" }
+    gh repo create $Repo $vis --source=. --remote=origin --push
+    Write-Host "[3/4] v 已创建仓库并推送"
+} else {
+    # 4) 已有仓库：补 remote 再推
+    git config http.proxy $Proxy
+    git remote get-url origin 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        git remote add origin "https://github.com/$owner/$Repo.git"
+    }
+    git push -u origin main
+    Write-Host "[3/4] v 已推送到已有仓库"
+}
+
+Write-Host "[4/4] 完成：https://github.com/$owner/$Repo"
+Write-Host "      提示：本仓库已写入 git 本地代理配置（git config http.proxy），换网络时用"
+Write-Host "            git config --unset http.proxy   可移除"

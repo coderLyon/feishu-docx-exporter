@@ -14,9 +14,9 @@ import { PX_TO_TWIP } from '../../shared/constants.js';
 import { STYLE } from '../docx/styles.js';
 
 // 黑色 + size 4（0.5pt，Word 默认粗细）：在线是浅灰，但用户要求 Word 里用默认黑框线
-// 框线与表头底纹取自飞书官方导出（dee0e3 / EFF0F1），比纯黑更接近在线观感。
-// 若想回到黑色框线，把 TABLE_BORDER_COLOR 改回 '000000' 即可。
-const TABLE_BORDER_COLOR = 'DEE0E3';
+// 框线用黑色 0.5pt（用户明确要求；曾一度跟随官方导出改成浅灰 DEE0E3，被指出"框线丢了"，已改回）。
+// 表头底纹沿用官方导出的 EFF0F1。
+const TABLE_BORDER_COLOR = '000000';
 const TABLE_HEADER_FILL = 'EFF0F1';
 const BORDER = { style: BorderStyle.SINGLE, size: 4, color: TABLE_BORDER_COLOR };
 
@@ -27,26 +27,50 @@ const BORDER = { style: BorderStyle.SINGLE, size: 4, color: TABLE_BORDER_COLOR }
  * 英文单词被硬切断行。这里迭代缩放，先压宽列；一旦某列降到最小可用宽度
  * （MIN，约 1.27cm，能容纳 8 个半角字符）就锁定不再压。
  */
-function fitWidths(widthsPx, availableTwips) {
-  const cols = widthsPx.map((w) => Math.max(1, Math.round(w * PX_TO_TWIP)));
+/**
+ * 计算表格各列宽度（twips）。
+ *
+ * 老做法是「按原比例缩放 + 统一 MIN=720」，结果是把「日期」「编码」这类
+ * 不可断词的长 token 压到折行（2026/09/21 被拆成两行），看起来很难受。
+ * 现在改为**内容感知**：
+ *   1. 先给每列一个下限 = 该列最长不可断 token 的宽度（不低于 720）
+ *   2. 剩下的空间按原始比例分给各列（宽列多吃）
+ *   3. 若下限之和已超出版心，等比压缩（此时只能接受折行）
+ */
+function fitWidths(widthsPx, availableTwips, contentMinTwips = []) {
   const MIN = 720;
-  const totalOf = (fn) => cols.reduce((s, w, i) => (fn(i) ? s + w : s), 0);
-  const locked = new Set();
+  const base = widthsPx.map((w) => Math.max(1, Math.round(w * PX_TO_TWIP)));
+  const mins = base.map((_, i) => Math.max(MIN, Math.round(contentMinTwips[i] ?? MIN)));
+  const minSum = mins.reduce((a, b) => a + b, 0);
 
-  for (let round = 0; round < 6; round += 1) {
-    const total = totalOf(() => true);
-    if (total <= availableTwips) break;
-    const freeIdx = cols.map((_, i) => i).filter((i) => !locked.has(i));
-    const freeSum = totalOf((i) => !locked.has(i));
-    if (!freeIdx.length || freeSum <= 0) break;
-
-    const excess = total - availableTwips;
-    const scale = Math.max(0, freeSum - excess) / freeSum;
-    for (const i of freeIdx) cols[i] = Math.max(MIN, Math.round(cols[i] * scale));
-    for (const i of freeIdx) if (cols[i] <= MIN + 2) locked.add(i);
-    if (locked.size >= cols.length) break;
+  if (minSum >= availableTwips) {
+    const k = availableTwips / minSum;
+    return mins.map((w) => Math.max(240, Math.floor(w * k)));
   }
-  return cols;
+
+  const rest = availableTwips - minSum;
+  const baseSum = base.reduce((a, b) => a + b, 0) || 1;
+  return mins.map((m, i) => m + Math.floor((rest * base[i]) / baseSum));
+}
+
+/**
+ * 估算一列需要的下限宽度：取该列最长「不可断 token」的宽度。
+ * 中文可任意断行，只按 2 个字算；ASCII/数字串（日期、编码、URL）整段不可断。
+ */
+function contentMinFor(cellTexts, fontSizePt = 10.5) {
+  const pxPerAscii = fontSizePt * 0.52 * (96 / 72);
+  const pxPerCjk = fontSizePt * (96 / 72);
+  const PAD = 12; // 左右单元格内边距
+  let maxPx = 0;
+  for (const text of cellTexts) {
+    const raw = String(text ?? '');
+    // 拆出 ASCII 连续串（含数字、下划线、斜杠、冒号等），中文单独计 2 字宽
+    const asciiRuns = raw.match(/[A-Za-z0-9_\-/.%:]+/g) ?? [];
+    const longest = asciiRuns.reduce((m, r) => Math.max(m, r.length), 0);
+    const width = longest * pxPerAscii + 2 * pxPerCjk + PAD;
+    if (width > maxPx) maxPx = width;
+  }
+  return Math.round(maxPx * PX_TO_TWIP);
 }
 
 /**
@@ -63,7 +87,30 @@ export function renderTable(node, ctx) {
   if (!rowsId.length || !columnsId.length) return [];
 
   const widthsPx = columnsId.map((id) => columnSet[id]?.column_width ?? 120);
-  const widths = fitWidths(widthsPx, ctx.pageContentWidth);
+
+  // 逐列统计单元格文本，算出「不让长 token 折断」所需的列宽下限
+  const columnTexts = columnsId.map((cid) => {
+    const texts = [];
+    for (const rid of rowsId) {
+      const info = cellSet[`${rid}${cid}`];
+      const block = info?.block_id ? ctx.byId.get(info.block_id) : null;
+      if (!block) continue;
+      const plain = block.data?.text
+        ? Object.values(block.data.text.initialAttributedTexts?.text ?? {}).join('')
+        : '';
+      if (plain) texts.push(plain);
+      for (const child of block.children ?? []) {
+        const cb = ctx.byId.get(child);
+        const childText = cb?.data?.text
+          ? Object.values(cb.data.text.initialAttributedTexts?.text ?? {}).join('')
+          : '';
+        if (childText) texts.push(childText);
+      }
+    }
+    return texts;
+  });
+  const contentMins = columnTexts.map((texts) => contentMinFor(texts));
+  const widths = fitWidths(widthsPx, ctx.pageContentWidth, contentMins);
 
   // 表头判据来自飞书数据本身：data.header_row === true 表示 rows_id[0] 是表头。
   // false 的表首行是「请求参数（HEAD）」这类跨列合并的分节行，按表头渲染会出错。

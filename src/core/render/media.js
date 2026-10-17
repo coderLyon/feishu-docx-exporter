@@ -14,7 +14,7 @@ import {
   VerticalAlign,
   WidthType,
 } from 'docx';
-import { PX_TO_EMU } from '../../shared/constants.js';
+import { PX_TO_EMU, PX_TO_TWIP } from '../../shared/constants.js';
 import { t } from '../../shared/messages.js';
 import { sanitizeXmlText } from '../../shared/util.js';
 import { STYLE } from '../docx/styles.js';
@@ -123,6 +123,34 @@ function cssColorToHex(value) {
  * 因此底色、字色、字号、加粗、对齐、行列合并、列宽都能 1:1 搬过来，
  * 而不是只搬文字（那正是「样式相去甚远」的原因）。
  */
+/**
+ * 把文本按「emoji/符号」与「普通文字」切开分别建 run。
+ * 原因：✅❌🔜 这类字符不在微软雅黑里，Word 回退后字形会错（实测变成 ☑/⊠/↔），
+ * 指定 Segoe UI Emoji 才能正确显示。
+ */
+const EMOJI_RE = /[\u2190-\u21FF\u2600-\u27BF\u2B00-\u2BFF\uFE0F\u{1F000}-\u{1FAFF}]/u;
+function splitEmojiRuns(text, cell) {
+  const size = Math.round(cell.fontSizePt * 2);
+  const base = { bold: cell.bold, size, ...(cell.color ? { color: cell.color } : {}) };
+  if (!EMOJI_RE.test(text)) return [new TextRun({ text, ...base })];
+
+  const runs = [];
+  let buf = '';
+  for (const ch of text) {
+    if (EMOJI_RE.test(ch)) {
+      if (buf) {
+        runs.push(new TextRun({ text: buf, ...base }));
+        buf = '';
+      }
+      runs.push(new TextRun({ text: ch, ...base, font: 'Segoe UI Emoji' }));
+    } else {
+      buf += ch;
+    }
+  }
+  if (buf) runs.push(new TextRun({ text: buf, ...base }));
+  return runs.length ? runs : [new TextRun({ text, ...base })];
+}
+
 function buildSheetFromHtml(html, ctx) {
   const parsed = new DOMParser().parseFromString(html, 'text/html');
   const tableEl = parsed.querySelector('table');
@@ -145,8 +173,6 @@ function buildSheetFromHtml(html, ctx) {
   if (widthsPx.length !== colCount) {
     widthsPx = Array.from({ length: colCount }, () => Math.round(availableTw / colCount / PX_TO_TWIP));
   }
-  const totalPx = widthsPx.reduce((a, b) => a + b, 0) || 1;
-  const colWidths = widthsPx.map((w) => Math.max(300, Math.round((w / totalPx) * availableTw)));
 
   const styleOf = (td) => {
     const style = td.getAttribute('style') ?? '';
@@ -163,6 +189,8 @@ function buildSheetFromHtml(html, ctx) {
   // 否则合并单元格会让每行 td 数量不一致，Word 里列就错位（实测 11 列变 8 列）。
   const occupied = Array.from({ length: trEls.length }, () => new Array(colCount).fill(false));
   const grid = Array.from({ length: trEls.length }, () => new Array(colCount).fill(null));
+  // owner[ri][ci] = 覆盖该位置的「起始单元格」；用于区分「被上方 rowspan 覆盖」与「本来就是空」
+  const owner = Array.from({ length: trEls.length }, () => new Array(colCount).fill(null));
 
   trEls.forEach((tr, ri) => {
     let ci = 0;
@@ -176,7 +204,11 @@ function buildSheetFromHtml(html, ctx) {
       const text = (td.textContent ?? '').replace(/\u200b/g, '').trim();
       grid[ri][ci] = { ...st, text, colspan, rowspan };
       for (let r = ri; r < ri + rowspan; r += 1) {
-        for (let c = ci; c < ci + colspan; c += 1) if (occupied[r]) occupied[r][c] = true;
+        for (let c = ci; c < ci + colspan; c += 1) {
+          if (!occupied[r]) continue;
+          occupied[r][c] = true;
+          if (!owner[r][c]) owner[r][c] = grid[ri][ci];
+        }
       }
       ci += colspan;
     }
@@ -187,14 +219,13 @@ function buildSheetFromHtml(html, ctx) {
     const cells = [];
     for (let ci = 0; ci < colCount; ci += 1) {
       const cell = grid[ri][ci];
+      // 被上方 rowspan 覆盖：**不再生成单元格**（docx 的 rowSpan 会自动补 vMerge continue，
+      // 这里再补一个就会多出一列 —— 实测 11 列变 12 列）
+      if (!cell && owner[ri][ci]) continue;
       if (!cell) {
         cells.push(new TableCell({ children: [new Paragraph({ style: STYLE.sheetCell, children: [] })] }));
         continue;
       }
-      // 被上方 rowspan 覆盖的格子：跳过（不重复生成）
-      const coveredAbove = ri > 0 && grid[ri - 1] && grid[ri - 1][ci] &&
-        grid[ri - 1][ci].rowspan + (ri - 1) > ri && grid[ri - 1][ci].colspan >= 1;
-      if (coveredAbove && grid[ri][ci] === grid[ri - 1][ci]) continue;
       const align =
         cell.alignRaw === 'center' ? AlignmentType.CENTER : cell.alignRaw === 'right' ? AlignmentType.RIGHT : undefined;
       cells.push(
@@ -208,14 +239,7 @@ function buildSheetFromHtml(html, ctx) {
             new Paragraph({
               alignment: align,
               style: STYLE.sheetCell,
-              children: [
-                new TextRun({
-                  text: cell.text,
-                  bold: cell.bold,
-                  size: Math.round(cell.fontSizePt * 2),
-                  ...(cell.color ? { color: cell.color } : {}),
-                }),
-              ],
+              children: splitEmojiRuns(cell.text, cell),
             }),
           ],
         }),
@@ -224,6 +248,33 @@ function buildSheetFromHtml(html, ctx) {
     if (cells.length) rows.push(new TableRow({ cantSplit: true, children: cells }));
   }
   if (!rows.length) return null;
+
+  // 列宽：**直接用 colgroup 的比例**（这正是飞书自己的列宽，等于「样式一致」），
+  // 只做等比映射 + 极小值保护。不要套普通表格的「四字下限」——
+  // 11 列时下限之和会超过版心，把窄列压到 8px（实测过）。
+  const srcSum = widthsPx.reduce((a, b) => a + b, 0) || 1;
+  const colWidths = widthsPx.map((w) => Math.round((w / srcSum) * availableTw));
+
+  // 最小宽度：至少放得下 5 个字（表头「Windows」「模块」不被拆成两行）。
+  // 差额从最宽的列按比例扣，保持整体比例和 = 版心。
+  // 下限要按列数自适应：11 列时「5 个字」的下限之和会超过版心，把所有列拉平。
+  // 取 min(5 字宽, 均分宽 × 0.85)
+  const fiveChar = Math.round(5 * 10 * (96 / 72) * PX_TO_TWIP);
+  const MIN_W = Math.min(fiveChar, Math.floor((availableTw / colCount) * 0.85));
+  for (let i = 0; i < colWidths.length; i += 1) {
+    if (colWidths[i] < MIN_W) {
+      const need = MIN_W - colWidths[i];
+      let pool = 0;
+      for (let j = 0; j < colWidths.length; j += 1) pool += Math.max(0, colWidths[j] - MIN_W);
+      if (pool > 0) {
+        for (let j = 0; j < colWidths.length; j += 1) {
+          const room = Math.max(0, colWidths[j] - MIN_W);
+          colWidths[j] -= Math.floor((need * room) / pool);
+        }
+      }
+      colWidths[i] = MIN_W;
+    }
+  }
 
   const border = { style: BorderStyle.SINGLE, size: 4, color: 'DEE0E3' };
   const table = new Table({

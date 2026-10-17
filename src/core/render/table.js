@@ -117,9 +117,18 @@ export function computeColumnWidths(columnTexts, availableTwips, widthsPx = [], 
     sum = width.reduce((a, b) => a + b, 0);
   }
 
-  // 归一化：差额补给「内容缺口最大」的列（通常是说明），保证正好铺满
-  if (sum !== availableTwips) {
-    const diff = availableTwips - sum;
+  // 安全阀：下限之和本身就超版心时（如 11 列每列都要 4 字宽），等比压缩；
+  // 绝不能让某列被减成负数 —— 实测出现过 -344，Word 直接渲染失败
+  let sum2 = width.reduce((a, b) => a + b, 0);
+  if (sum2 > availableTwips) {
+    const k = availableTwips / sum2;
+    for (let i = 0; i < width.length; i += 1) width[i] = Math.max(120, Math.floor(width[i] * k));
+  }
+
+  // 归一化：差额补给「内容缺口最大」的列，保证正好铺满版心
+  let sum3 = width.reduce((a, b) => a + b, 0);
+  if (sum3 !== availableTwips) {
+    const diff = availableTwips - sum3;
     let best = 0;
     let bestGap = -Infinity;
     for (let i = 0; i < width.length; i += 1) {
@@ -129,10 +138,10 @@ export function computeColumnWidths(columnTexts, availableTwips, widthsPx = [], 
         best = i;
       }
     }
-    width[best] += diff;
+    width[best] = Math.max(120, width[best] + diff);
   }
 
-  return width;
+  return width.map((w) => Math.max(120, Math.round(w)));
 }
 
 /** 兼容旧调用：按 px 宽度列表 + 每列内容下限计算 */

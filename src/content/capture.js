@@ -671,12 +671,15 @@ async function scanPass(scroller, state, onProgress) {
             if (near) candidates.push(near.getAttribute('data-block-id'));
             candidates.push(target.container.getAttribute?.('data-block-id'));
             const all = [...document.querySelectorAll('[data-block-type="sheet"], .docx-sheet-block')];
+            let sheetHtml = null;
             for (const id of candidates) {
               if (id && localStorage.getItem('fde-sheet-' + id)) {
                 table = localStorage.getItem('fde-sheet-' + id);
+                sheetHtml = localStorage.getItem('fde-sheet-html-' + id) || null;
                 break;
               }
             }
+            if (sheetHtml) table = { tsv: table, html: sheetHtml };
             if (!table) {
               const idx = all.indexOf(target.container) >= 0 ? all.indexOf(target.container) : all.indexOf(near);
               if (idx >= 0) table = localStorage.getItem('fde-sheet-' + idx) || null;

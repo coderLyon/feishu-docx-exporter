@@ -30,6 +30,8 @@ export const STYLE = {
   title: 'FdeTitle',
   inlineCode: 'FdeInlineCode',
   heading: (level) => `FdeHeading${Math.min(9, Math.max(1, level))}`,
+  // 内嵌表格单元格：字号/颜色跟随飞书单元格，允许 run 级直接格式
+  sheetCell: 'FdeSheetCell',
 };
 
 export const INK = '000000';
@@ -102,6 +104,12 @@ export function buildStyles(options) {
         id: STYLE.list,
         name: 'Fde 列表',
         run: { font: bodyFont, size: TYPO.body.size, color: BODY_INK },
+        paragraph: { spacing: spacing(0, 0) },
+      },
+      {
+        id: STYLE.sheetCell,
+        name: 'Fde 内嵌表格单元格',
+        basedOn: STYLE.tableText,
         paragraph: { spacing: spacing(0, 0) },
       },
       {

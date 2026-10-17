@@ -81,11 +81,29 @@ async function handleVisibleSheets() {
     await sleep(650);
     await key('KeyC', 67, 2);
     await sleep(1100);
-    const tsv = await cdp.eval(`(async () => { try { return await navigator.clipboard.readText(); } catch { return ''; } })()`);
+    // 同时取 text/plain(TSV) 与 text/html(带样式) —— HTML 里含边框/底色/字号/合并信息
+    const flavors = await cdp.eval(`(async () => {
+      const out = { text: '', html: '' };
+      try {
+        const items = await navigator.clipboard.read();
+        for (const it of items) {
+          if (it.types.includes('text/plain')) out.text = await (await it.getType('text/plain')).text();
+          if (it.types.includes('text/html')) out.html = await (await it.getType('text/html')).text();
+        }
+      } catch {
+        try { out.text = await navigator.clipboard.readText(); } catch {}
+      }
+      return out;
+    })()`);
+    const tsv = flavors.text || '';
     const lines = String(tsv).replace(/\r/g, '').split('\n').filter((l) => l.length);
     if (!lines.length) { console.log('    ✗ 剪贴板为空'); continue; }
     console.log(`    ✓ ${lines.length} 行 × ${lines[0].split('\t').length} 列`);
     await cdp.eval(`(() => { localStorage.setItem('fde-sheet-' + ${JSON.stringify(box.id)}, ${JSON.stringify(tsv)}); return true; })()`);
+    if (flavors.html) {
+      await cdp.eval(`(() => { localStorage.setItem('fde-sheet-html-' + ${JSON.stringify(box.id)}, ${JSON.stringify(flavors.html)}); return true; })()`);
+      console.log(`    ✓ 样式 HTML ${(flavors.html.length / 1024).toFixed(0)}KB 已保存`);
+    }
     processed += 1;
   }
 }

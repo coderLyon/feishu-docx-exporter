@@ -9,7 +9,9 @@ import {
   Table,
   TableCell,
   TableRow,
+  TableLayoutType,
   TextRun,
+  VerticalAlign,
   WidthType,
 } from 'docx';
 import { PX_TO_EMU } from '../../shared/constants.js';
@@ -99,6 +101,148 @@ export function renderFile(node, ctx) {
 }
 
 /** 内嵌电子表格：整表截图嵌入，彻底避免官方导出「显示不全」 */
+/** rgb(216, 234, 211) / #d8ead3 → 'D8EAD3' */
+function cssColorToHex(value) {
+  if (!value) return null;
+  const rgb = value.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
+  if (rgb) {
+    const [r, g, b] = [Number(rgb[1]), Number(rgb[2]), Number(rgb[3])];
+    return [r, g, b].map((n) => n.toString(16).padStart(2, '0')).join('').toUpperCase();
+  }
+  const hex = value.trim().replace(/^#/, '');
+  return /^[0-9a-f]{6}$/i.test(hex) ? hex.toUpperCase() : null;
+}
+
+/**
+ * 用飞书「复制」得到的 **HTML flavor** 还原表格完整样式。
+ *
+ * 飞书给出的单元格形如：
+ *   <td rowspan="4" style="border: 0.5pt solid rgb(222,224,227); font-size: 10pt;
+ *        background-color: rgb(216,234,211); color: rgb(17,34,51)">模块</td>
+ *
+ * 因此底色、字色、字号、加粗、对齐、行列合并、列宽都能 1:1 搬过来，
+ * 而不是只搬文字（那正是「样式相去甚远」的原因）。
+ */
+function buildSheetFromHtml(html, ctx) {
+  const parsed = new DOMParser().parseFromString(html, 'text/html');
+  const tableEl = parsed.querySelector('table');
+  if (!tableEl) return null;
+
+  const trEls = [...tableEl.querySelectorAll('tr')];
+  if (!trEls.length) return null;
+
+  const colEls = [...tableEl.querySelectorAll('colgroup col')];
+  const colCount = Math.max(
+    colEls.length,
+    ...trEls.map((tr) =>
+      [...tr.children].reduce((sum, td) => sum + (Number(td.getAttribute('colspan')) || 1), 0),
+    ),
+  );
+  if (!colCount || colCount > 40) return null;
+
+  const availableTw = ctx.pageContentWidth ?? 10106;
+  let widthsPx = colEls.map((c) => Number(c.getAttribute('width')) || 0).filter((w) => w > 0);
+  if (widthsPx.length !== colCount) {
+    widthsPx = Array.from({ length: colCount }, () => Math.round(availableTw / colCount / PX_TO_TWIP));
+  }
+  const totalPx = widthsPx.reduce((a, b) => a + b, 0) || 1;
+  const colWidths = widthsPx.map((w) => Math.max(300, Math.round((w / totalPx) * availableTw)));
+
+  const styleOf = (td) => {
+    const style = td.getAttribute('style') ?? '';
+    const pick = (re) => (style.match(re)?.[1] ?? '').trim();
+    const bg = cssColorToHex(pick(/background-color:\s*([^;]+)/i));
+    const color = cssColorToHex(pick(/[^-]color:\s*([^;]+)/i));
+    const fontSizePt = Number(pick(/font-size:\s*([\d.]+)pt/i)) || 10;
+    const bold = /font-weight:\s*(bold|[6-9]00)/i.test(style);
+    const alignRaw = pick(/text-align:\s*([a-z]+)/i);
+    return { bg, color, fontSizePt, bold, alignRaw };
+  };
+
+  // HTML 表格 → 规整网格：用占位矩阵处理 rowspan/colspan，
+  // 否则合并单元格会让每行 td 数量不一致，Word 里列就错位（实测 11 列变 8 列）。
+  const occupied = Array.from({ length: trEls.length }, () => new Array(colCount).fill(false));
+  const grid = Array.from({ length: trEls.length }, () => new Array(colCount).fill(null));
+
+  trEls.forEach((tr, ri) => {
+    let ci = 0;
+    for (const td of [...tr.children]) {
+      if (td.tagName !== 'TD' && td.tagName !== 'TH') continue;
+      while (ci < colCount && occupied[ri][ci]) ci += 1;
+      if (ci >= colCount) break;
+      const colspan = Math.min(Number(td.getAttribute('colspan')) || 1, colCount - ci);
+      const rowspan = Math.min(Number(td.getAttribute('rowspan')) || 1, trEls.length - ri);
+      const st = styleOf(td);
+      const text = (td.textContent ?? '').replace(/\u200b/g, '').trim();
+      grid[ri][ci] = { ...st, text, colspan, rowspan };
+      for (let r = ri; r < ri + rowspan; r += 1) {
+        for (let c = ci; c < ci + colspan; c += 1) if (occupied[r]) occupied[r][c] = true;
+      }
+      ci += colspan;
+    }
+  });
+
+  const rows = [];
+  for (let ri = 0; ri < grid.length; ri += 1) {
+    const cells = [];
+    for (let ci = 0; ci < colCount; ci += 1) {
+      const cell = grid[ri][ci];
+      if (!cell) {
+        cells.push(new TableCell({ children: [new Paragraph({ style: STYLE.sheetCell, children: [] })] }));
+        continue;
+      }
+      // 被上方 rowspan 覆盖的格子：跳过（不重复生成）
+      const coveredAbove = ri > 0 && grid[ri - 1] && grid[ri - 1][ci] &&
+        grid[ri - 1][ci].rowspan + (ri - 1) > ri && grid[ri - 1][ci].colspan >= 1;
+      if (coveredAbove && grid[ri][ci] === grid[ri - 1][ci]) continue;
+      const align =
+        cell.alignRaw === 'center' ? AlignmentType.CENTER : cell.alignRaw === 'right' ? AlignmentType.RIGHT : undefined;
+      cells.push(
+        new TableCell({
+          ...(cell.colspan > 1 ? { columnSpan: cell.colspan } : {}),
+          ...(cell.rowspan > 1 ? { rowSpan: cell.rowspan } : {}),
+          verticalAlign: VerticalAlign.CENTER,
+          margins: { top: 30, bottom: 30, left: 60, right: 60 },
+          ...(cell.bg ? { shading: { type: ShadingType.CLEAR, fill: cell.bg } } : {}),
+          children: [
+            new Paragraph({
+              alignment: align,
+              style: STYLE.sheetCell,
+              children: [
+                new TextRun({
+                  text: cell.text,
+                  bold: cell.bold,
+                  size: Math.round(cell.fontSizePt * 2),
+                  ...(cell.color ? { color: cell.color } : {}),
+                }),
+              ],
+            }),
+          ],
+        }),
+      );
+    }
+    if (cells.length) rows.push(new TableRow({ cantSplit: true, children: cells }));
+  }
+  if (!rows.length) return null;
+
+  const border = { style: BorderStyle.SINGLE, size: 4, color: 'DEE0E3' };
+  const table = new Table({
+    rows,
+    columnWidths: colWidths,
+    layout: TableLayoutType.FIXED,
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    borders: {
+      top: border,
+      bottom: border,
+      left: border,
+      right: border,
+      insideHorizontal: border,
+      insideVertical: border,
+    },
+  });
+  return [table, new Paragraph({ children: [], style: STYLE.body })];
+}
+
 /**
  * 把 TSV 单元格数据建成 Word 原生表格。
  * 返回值：段落/表格数组；数据不合法时返回 null（调用方退回截图）。
@@ -181,8 +325,15 @@ export function renderSheet(node, ctx) {
   //   'image'（默认）—— 截图，版式最忠实
   //   'table'        —— Word 原生表格，可编辑可搜索（需要先提取到单元格数据）
   if (ctx.options?.embeddedSheet === 'table') {
+    // 优先用带样式的 HTML（底色/字色/字号/合并/列宽），退回纯文本 TSV
+    const html = typeof resource?.table === 'object' ? resource.table.html : null;
+    if (html) {
+      const built = buildSheetFromHtml(html, ctx);
+      if (built) return built;
+    }
     if (resource?.table) {
-      const built = buildSheetTable(resource.table, ctx);
+      const tsv = typeof resource.table === 'object' ? resource.table.tsv : resource.table;
+      const built = buildSheetTable(tsv, ctx);
       if (built) return built;
       // 数据拿到了但版心放不下/格式异常 → 继续走图片，下面会补一条降级说明
     } else if (resource?.data) {

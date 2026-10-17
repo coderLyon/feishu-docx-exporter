@@ -14,7 +14,11 @@ import { PX_TO_TWIP } from '../../shared/constants.js';
 import { STYLE } from '../docx/styles.js';
 
 // 黑色 + size 4（0.5pt，Word 默认粗细）：在线是浅灰，但用户要求 Word 里用默认黑框线
-const BORDER = { style: BorderStyle.SINGLE, size: 4, color: '000000' };
+// 框线与表头底纹取自飞书官方导出（dee0e3 / EFF0F1），比纯黑更接近在线观感。
+// 若想回到黑色框线，把 TABLE_BORDER_COLOR 改回 '000000' 即可。
+const TABLE_BORDER_COLOR = 'DEE0E3';
+const TABLE_HEADER_FILL = 'EFF0F1';
+const BORDER = { style: BorderStyle.SINGLE, size: 4, color: TABLE_BORDER_COLOR };
 
 /**
  * 按页面可用宽度缩放列宽。
@@ -122,7 +126,7 @@ export function renderTable(node, ctx) {
           ...(rowSpan > 1 ? { rowSpan } : {}),
           ...(colSpan > 1 ? { columnSpan: colSpan } : {}),
           ...(isHeaderRow
-            ? { shading: { type: ShadingType.CLEAR, fill: 'F5F6F7' } }
+            ? { shading: { type: ShadingType.CLEAR, fill: TABLE_HEADER_FILL } }
             : {}),
           width: { size: widths[colIndex] ?? 1200, type: WidthType.DXA },
           margins: { top: 60, bottom: 60, left: 80, right: 80 },

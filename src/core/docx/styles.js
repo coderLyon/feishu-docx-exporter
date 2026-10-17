@@ -36,6 +36,8 @@ export const INK = '000000';
 export const BODY_INK = '1F2329';
 export const BRAND_BLUE = '3370FF';
 const MUTED = '646A73';
+/** 引用块主色：竖线与正文**同色**（用户要求；在线原为深色正文+浅灰竖线） */
+export const QUOTE_INK = '646A73';
 const CODE_FILL = 'F5F6F7';
 
 const MONO = { ascii: 'Consolas', eastAsia: 'Consolas', hAnsi: 'Consolas', cs: 'Consolas' };
@@ -109,12 +111,13 @@ export function buildStyles(options) {
         id: STYLE.quote,
         name: '引用',
         basedOn: STYLE.body,
-        run: { font: bodyFont, size: TYPO.body.size, color: BODY_INK },
+        // 用户要求：引用正文与竖线保持同一颜色（值由 QUOTE_INK 统一控制）
+        run: { font: bodyFont, size: TYPO.body.size, color: QUOTE_INK },
         paragraph: {
           // 引用块的竖线改由外层单格表格的左边框承载（见 renderQuoteContainer）：
           // 加在样式上会和列表编号的缩进打架，出现两条不对齐的竖线。
-          // 这里只保留段落间距，缩进交给单元格内边距（在线为 12px）
-          spacing: spacing(60, 60),
+          // 段前段后与行距按飞书官方导出：before/after=120 twips，line=288 auto（1.2 倍）
+          spacing: { before: 120, after: 120, line: 288, lineRule: 'auto' },
         },
       },
       {

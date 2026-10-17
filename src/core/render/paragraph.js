@@ -16,7 +16,7 @@ import {
 } from 'docx';
 import { parseAttributedText } from '../text.js';
 import { runsToDocxChildren } from '../docx/runs.js';
-import { STYLE } from '../docx/styles.js';
+import { QUOTE_INK, STYLE } from '../docx/styles.js';
 import { BULLET_REFERENCE } from '../docx/numbering.js';
 import { toHexColor } from '../../shared/util.js';
 
@@ -67,8 +67,10 @@ function headingPrefix(node, ctx, level, text) {
   return `${ctx.headingCounters.slice(0, level).join('.')}. `;
 }
 
-/** 引用块竖线颜色：取自在线文档实测（tools/probe-quote.mjs） */
+// 竖线颜色/粗细取自飞书官方导出（#BBBFC4 / sz=18）；正文为官方同款灰 #646A73（QUOTE_INK）。
+// 若要与竖线**完全相同**，把这里改成 QUOTE_INK 即可。
 const QUOTE_BAR = 'BBBFC4';
+const QUOTE_BAR_SIZE = 18;
 
 /** 正文 / 标题 */
 export function renderTextLike(node, ctx) {
@@ -188,7 +190,7 @@ export function renderQuoteContainer(node, ctx, level = 0) {
         top: { style: BorderStyle.NONE },
         bottom: { style: BorderStyle.NONE },
         right: { style: BorderStyle.NONE },
-        left: { style: BorderStyle.SINGLE, size: 12, color: QUOTE_BAR },
+        left: { style: BorderStyle.SINGLE, size: QUOTE_BAR_SIZE, color: QUOTE_BAR },
         insideHorizontal: { style: BorderStyle.NONE },
         insideVertical: { style: BorderStyle.NONE },
       },
@@ -196,7 +198,8 @@ export function renderQuoteContainer(node, ctx, level = 0) {
         new TableRow({
           children: [
             new TableCell({
-              margins: { top: 0, bottom: 0, left: 180, right: 0 },
+              // 官方：上 60 / 左 120 / 下 30 / 右 120（twips）
+              margins: { top: 60, bottom: 30, left: 120, right: 120 },
               children: inner.length
                 ? inner
                 : [new Paragraph({ children: [], style: STYLE.body })],

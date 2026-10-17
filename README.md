@@ -44,6 +44,7 @@ npm run pack      # 打成 飞书文档导出Word扩展.zip（旧包自动备份
 | **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** | 排障手册：Chrome 注入、画板采集、内存、面板卡死、编码乱码 |
 | **[docs/CHANGELOG.md](docs/CHANGELOG.md)** | r001 → r020 迭代记录 |
 | [docs/THIRD-PARTY.md](docs/THIRD-PARTY.md) | 第三方依赖与许可声明 |
+| **[docs/COMPARISON.md](docs/COMPARISON.md)** | 与飞书官方「下载为 Word」的逐项对比（6 篇文档实测） |
 | [samples/README.md](samples/README.md) | 样本数据与各轮产物说明 |
 
 ## 许可与隐私

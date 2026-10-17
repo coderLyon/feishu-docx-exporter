@@ -111,12 +111,28 @@ export function renderTextLike(node, ctx) {
  * FdeTableText 等样式，docx 不会额外插入一个 ListParagraph 的 pStyle
  * （一个 pPr 里出现两个 pStyle 会被 Word 判为文档损坏）。
  */
+/**
+ * 引用内列表的缩进覆盖。
+ *
+ * 编号定义里的 level0 是 left=720 / hanging=360（符号落在 18pt 处），
+ * 这在正文里没问题，但引用里正文从头排版（符号应与正文同 x 起），
+ * 否则「适用场景」在 x=7.2、下面两个 bullet 却在 x=25.2 —— 看起来就是没对齐。
+ * 在线与飞书官方导出都是「符号与引用正文同 x，文字悬出」。
+ * pPr 里的 w:ind 会覆盖编号级缩进，所以这里直接给段落写缩进即可。
+ */
+function quoteListIndent(ctx, level) {
+  if (!ctx.quoteDepth) return undefined;
+  const base = 360 + level * 420; // 0 级符号贴齐正文，逐级 21pt
+  return { left: base, hanging: base };
+}
+
 export function renderBullet(node, ctx, level = 0) {
   const runs = parseAttributedText(node.data?.text);
   return [
     new Paragraph({
       children: runsToDocxChildren(runs),
       numbering: { reference: BULLET_REFERENCE, level, custom: true },
+      indent: quoteListIndent(ctx, level),
       style: styleIdFor(ctx),
       alignment: alignOf(node.data),
     }),
@@ -131,6 +147,7 @@ export function renderOrdered(node, ctx, level = 0) {
     new Paragraph({
       children: runsToDocxChildren(runs),
       numbering: { reference: `fde-ordered-${ctx.ordered.current}`, level },
+      indent: quoteListIndent(ctx, level),
       style: styleIdFor(ctx),
       alignment: alignOf(node.data),
     }),
@@ -185,6 +202,9 @@ export function renderQuoteContainer(node, ctx, level = 0) {
 
   return [
     new Table({
+      // 不左移：表格左边框（即引用竖线）必须**与版心正文左边界对齐**（在线文档就是这样）。
+      // 引用正文的缩进由单元格左内边距提供，视觉上竖线贴着正文列、引用文字内缩约 10pt。
+      // （注：飞书官方导出的做法相反——竖线甩到版心左侧 7pt，正文贴版心；用户明确要求按在线来）
       width: { size: 100, type: WidthType.PERCENTAGE },
       borders: {
         top: { style: BorderStyle.NONE },
@@ -198,8 +218,9 @@ export function renderQuoteContainer(node, ctx, level = 0) {
         new TableRow({
           children: [
             new TableCell({
-              // 官方：上 60 / 左 120 / 下 30 / 右 120（twips）
-              margins: { top: 60, bottom: 30, left: 120, right: 120 },
+              // 左内边距 180 twips（9pt）≈ 在线的引用文字缩进 12px；
+              // 其余按官方：上 60 / 下 30 / 右 120
+              margins: { top: 60, bottom: 30, left: 180, right: 120 },
               children: inner.length
                 ? inner
                 : [new Paragraph({ children: [], style: STYLE.body })],

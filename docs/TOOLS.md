@@ -61,6 +61,8 @@
 | 脚本 | 用法 | 说明 |
 | --- | --- | --- |
 | `tools/fetch-official-word3.mjs` | `node tools/fetch-official-word3.mjs` | 自动走飞书 UI「••• → 下载为 → Word → 导出设置 → 导出」，把官方 docx 落到 `samples/official/`。前置：调试 Chrome 已登录并打开目标文档 |
+| `tools/audit-align.mjs` | `node tools/audit-align.mjs <pdf> [--census]` | 左对齐体检：量各元素左边界与版心的差值；`--census` 做全文分布统计 |
+| `tools/probe-quote-align.mjs` | `node tools/probe-quote-align.mjs` | 量在线引用块的竖线/正文/符号坐标，确定对齐基准 |
 | `tools/compare-official.mjs` | `node tools/compare-official.mjs <官方.docx> <我们的.docx>` | 逐项对比页面设置、样式、引用、表格、图片尺寸。注意 `<w:tbl>` 计数含嵌套表，会重复计入 |
 | `tools/probe-quote.mjs` | `node tools/probe-quote.mjs` | 读取在线引用块的计算样式（竖线颜色/宽度/内边距），用于 1:1 复刻 |
 | `tools/probe-scroll-cost.mjs` | `node tools/probe-scroll-cost.mjs` | 隔离实验：只滚动不采集，判断卡顿来自飞书渲染还是我们的采集代码 |

@@ -86,6 +86,12 @@ async function launch() {
     '--no-first-run',
     '--no-default-browser-check',
     '--disable-gpu',
+    // 关键：窗口被遮挡/后台化时 Chrome 会节流渲染，document.visibilityState 变成 hidden，
+    // 飞书虚拟化几乎不渲染 DOM（实测只渲染 6/90 个块），采集直接全空。
+    // 这三个开关让后台窗口保持正常渲染，是「首屏偶发漏采」的真正解药。
+    '--disable-backgrounding-occluded-windows',
+    '--disable-renderer-backgrounding',
+    '--disable-background-timer-throttling',
     TARGET,
   ];
   child = spawn(CHROME, args, { stdio: 'ignore' });

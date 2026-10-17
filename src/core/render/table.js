@@ -136,6 +136,8 @@ export function renderTable(node, ctx) {
 
     if (!cells.length) cells.push(new Paragraph({ text: '', style: STYLE.tableText }));
     return new TableRow({
+      // 一行不允许被劈成两半跨页（否则单元格文字会在页边界处截断）
+      cantSplit: true,
       children: cells,
       ...(hasHeader && rowIndex === 0 ? { tableHeader: true } : {}),
     });

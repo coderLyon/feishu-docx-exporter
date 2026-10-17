@@ -503,6 +503,14 @@ export async function collectResources({ onProgress } = {}) {
     seenKeys: new Set(),
   };
 
+  // 采集前把页面提到前台：后台/被遮挡的标签页里 visibilityState=hidden，
+  // Chrome 会节流渲染，飞书虚拟化只渲染极少数块 —— 采集结果会全空
+  try {
+    window.focus();
+  } catch {
+    /* 忽略 */
+  }
+
   const scroller = findDocScroller();
   // 全局预算：无论文档多大，采集必须在 4 分钟内收敛，
   // 否则大文档会长时间占用主线程，用户看着像「浏览器卡死」

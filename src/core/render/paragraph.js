@@ -141,12 +141,12 @@ export function renderBullet(node, ctx, level = 0) {
 }
 
 /** 有序列表（Word 原生编号，按列表段自动重新从 1 计数） */
-export function renderOrdered(node, ctx, level = 0) {
+export function renderOrdered(node, ctx, level = 0, instance = ctx.ordered.instance) {
   const runs = parseAttributedText(node.data?.text);
   return [
     new Paragraph({
       children: runsToDocxChildren(runs),
-      numbering: { reference: `fde-ordered-${ctx.ordered.current}`, level },
+      numbering: { reference: `fde-ordered-${instance}`, level },
       indent: quoteListIndent(ctx, level),
       style: styleIdFor(ctx),
       alignment: alignOf(node.data),
@@ -300,6 +300,8 @@ export function renderCode(node, ctx) {
       },
       rows: [
         new TableRow({
+          // 代码块不允许跨页断开：否则下一页开头会孤零零剩下几行花括号
+          cantSplit: true,
           children: [
             new TableCell({
               shading: { type: ShadingType.CLEAR, fill: 'F5F6F7' },

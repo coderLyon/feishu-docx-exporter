@@ -51,7 +51,7 @@ export function createRenderContext({
     bodyFont,
     // 文档语言：决定占位/降级文案用中文还是英文（按正文中文占比自动判断）
     lang: detectLang(textSample),
-    ordered: { instance: 0, current: 0 },
+    ordered: { instance: 0, current: 0, byLevel: [] },
     counters: { image: 0, sheet: 0, whiteboard: 0 },
     // 标题自动编号计数器（1..9 级）
     headingCounters: [0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -68,16 +68,26 @@ export function createRenderContext({
       return list[index] ?? null;
     },
 
-    /** 渲染一组子块；有序列表在此处维护编号实例 */
+    /**
+     * 渲染一组子块；有序列表在此处维护编号实例。
+     *
+     * 实例号必须**按层级**记录：嵌套子列表会递归进 renderChildren，
+     * 若共用同一个全局 current，子列表的实例号会顶掉父级的，
+     * 父级后续项就被并进子列表实例、从 1 重新计数
+     *（实测：1、2、a、然后 1、2、3 —— 编号倒退）。
+     */
     renderChildren(nodes, level = 0) {
       const out = [];
       let prevWasOrdered = false;
       for (const node of nodes ?? []) {
         if (!node) continue;
         if (node.type === 'ordered') {
-          if (!prevWasOrdered) this.ordered.instance += 1;
-          this.ordered.current = this.ordered.instance;
-          out.push(...renderOrdered(node, this, level));
+          if (!prevWasOrdered) {
+            this.ordered.instance += 1;
+            this.ordered.byLevel[level] = this.ordered.instance;
+          }
+          const instance = this.ordered.byLevel[level] ?? this.ordered.instance;
+          out.push(...renderOrdered(node, this, level, instance));
           prevWasOrdered = true;
         } else {
           prevWasOrdered = false;

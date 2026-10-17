@@ -66,6 +66,9 @@ export function buildStyles(options) {
       paragraph: {
         outlineLevel: level - 1,
         spacing: spacing(spec.before, spec.after),
+        // 标题必须与下一段同页：否则会出现「标题孤零零留在页底、内容翻到下一页」，
+        // 长文档里这种断法最伤阅读连贯性（实测 p19 底部就有一个）
+        keepNext: true,
       },
     };
   });
@@ -135,7 +138,9 @@ export function buildStyles(options) {
         id: STYLE.codeCaption,
         name: 'Fde 代码标题',
         run: { font: bodyFont, size: 18, color: MUTED, italics: true },
-        paragraph: { spacing: spacing(40, 60), alignment: 'left' },
+        paragraph: {
+          // 代码块标题也要跟着代码块走，不能单独留在页底
+          keepNext: true, spacing: spacing(40, 60), alignment: 'left' },
       },
       {
         id: STYLE.caption,

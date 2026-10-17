@@ -98,6 +98,15 @@ Packer.toBlob() → content script 建 blob URL → service-worker chrome.downlo
 17. **采集必须有三道资源闸**：瓦片数 ≤9、输出画布 ≤8M 像素、采集总预算 4 分钟。
     缺任何一道，大文档（800+ 块）会因巨型画布/超大 base64 把渲染进程拖死（已踩过）。
 
+18. **页面必须可见，否则采不到东西**：Chrome 对被遮挡/后台窗口会节流渲染，
+    `document.visibilityState` 变成 `hidden` 时飞书虚拟化只渲染个位数的块
+    （实测 6/90），采集结果全空。`serve-chrome` 已加
+    `--disable-backgrounding-occluded-windows / --disable-renderer-backgrounding /
+    --disable-background-timer-throttling`，采集前还会 `window.focus()`。
+    **「首屏偶发漏采」的真凶就是它**，不是时序。
+19. **排版三件套**：标题 `keepNext`（不与正文分离）、表格行与代码块 `cantSplit`（不跨页劈开）、
+    表头 `tableHeader`（跨页重复）。缺 keepNext 会出现「标题孤悬页底」，长文档里最伤连贯性。
+
 ## 五、尚未打通的两条路（附证据）
 
 ### 内嵌电子表格 → 原生表格

@@ -69,9 +69,15 @@ try {
   /* 忽略 */
 }
 
-const after = { chrome: count('chrome.exe') };
-console.log(`停止后：chrome.exe ${after.chrome} 个`);
-if (after.chrome === 0) {
+// Chrome 是多进程结构，taskkill 后子进程退出有一两秒延迟，
+// 立刻清点会误报「仍有残留」。这里等它退干净（最多 8 秒）
+let after = count('chrome.exe');
+for (let i = 0; i < 16 && after > 0; i += 1) {
+  execFileSync('node', ['-e', 'setTimeout(()=>{},400)']);
+  after = count('chrome.exe');
+}
+console.log(`停止后：chrome.exe ${after} 个`);
+if (after === 0) {
   console.log('✓ 调试环境已完全停止');
 } else {
   console.log('✗ 仍有残留进程，请手动结束（可能被其他程序占用）');

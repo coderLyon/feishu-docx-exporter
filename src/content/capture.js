@@ -196,11 +196,23 @@ async function stitchCanvases(canvases, scroller, { singleTile = false } = {}) {
   const contentH = singleTile ? cssH : Math.max(cssH, scroller?.scrollHeight ?? cssH);
   const tilesX = Math.max(1, Math.ceil(contentW / cssW));
   const tilesY = Math.max(1, Math.ceil(contentH / cssH));
-  if (tilesX * tilesY > 16) return null;
+  // 瓦片数上限 9：再多的拼接既慢又容易把渲染进程的内存打爆（实测大文档会整页卡死）
+  if (tilesX * tilesY > 9) return null;
 
-  const outputW = Math.round(contentW * dpr);
-  const outputH = Math.round(contentH * dpr);
+  // 输出像素上限 8M（约 32MB RGBA）。超宽/超高的表格先等比缩小，
+  // 否则在 8GB 机器上「分配巨型画布 + 生成 base64」直接把页面拖死
+  const MAX_PIXELS = 8_000_000;
+  let outputW = Math.round(contentW * dpr);
+  let outputH = Math.round(contentH * dpr);
+  if (outputW * outputH > MAX_PIXELS) {
+    const k = Math.sqrt(MAX_PIXELS / (outputW * outputH));
+    outputW = Math.max(1, Math.floor(outputW * k));
+    outputH = Math.max(1, Math.floor(outputH * k));
+  }
   const { canvas: output, context } = createCanvas2d(outputW, outputH);
+  // 目标尺寸可能已被缩小，绘制时按比例缩放
+  const scaleX = outputW / (contentW * dpr);
+  const scaleY = outputH / (contentH * dpr);
 
   for (let ty = 0; ty < tilesY; ty += 1) {
     for (let tx = 0; tx < tilesX; tx += 1) {
@@ -228,16 +240,16 @@ async function stitchCanvases(canvases, scroller, { singleTile = false } = {}) {
         }
         context.drawImage(
           image,
-          Math.round(sx * dpr),
-          Math.round(sy * dpr),
-          Math.round(cssW * dpr),
-          Math.round(cssH * dpr),
+          Math.round(sx * dpr) * scaleX,
+          Math.round(sy * dpr) * scaleY,
+          Math.round(cssW * dpr) * scaleX,
+          Math.round(cssH * dpr) * scaleY,
         );
       }
     }
   }
 
-  return { canvas: output, width: contentW, height: contentH };
+  return { canvas: output, width: outputW, height: outputH };
 }
 
 /** 兜底：截取视口再按元素位置裁剪（可正确拿到 WebGL 合成结果） */
@@ -487,6 +499,9 @@ export async function collectResources({ onProgress } = {}) {
   };
 
   const scroller = findDocScroller();
+  // 全局预算：无论文档多大，采集必须在 4 分钟内收敛，
+  // 否则大文档会长时间占用主线程，用户看着像「浏览器卡死」
+  state.deadline = Date.now() + 4 * 60 * 1000;
 
   // 采集前先等文档主体真正挂载：刚打开页面就点导出时，DOM 里可能还没有内容块，
   // 这时扫描什么也扫不到（图片/内嵌表格/画板会全部降级）。
@@ -548,10 +563,11 @@ async function warmUpScroll(scroller, onProgress) {
   const step = Math.max(240, Math.floor(scroller.clientHeight * 0.5));
   let y = 0;
   let guard = 0;
+  const deadline = Date.now() + 90 * 1000; // 预热最多 90 秒，防止大文档无上限滚动
   scroller.scrollTop = 0;
   await sleep(400);
 
-  while (y <= scroller.scrollHeight && guard < 400) {
+  while (y <= scroller.scrollHeight && guard < 400 && Date.now() < deadline) {
     guard += 1;
     scroller.scrollTop = y;
     await sleep(450);
@@ -575,6 +591,10 @@ async function scanPass(scroller, state, onProgress) {
     guard += 1;
     const total = scroller.scrollHeight;
     if (y > total) break;
+    if (state.deadline && Date.now() > state.deadline) {
+      console.warn('[fde] 采集超出时间预算，提前结束扫描（未采到的资源会降级）');
+      break;
+    }
 
     scroller.scrollTop = y;
     await sleep(400);

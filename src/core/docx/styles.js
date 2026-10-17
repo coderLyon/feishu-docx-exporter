@@ -111,12 +111,10 @@ export function buildStyles(options) {
         basedOn: STYLE.body,
         run: { font: bodyFont, size: TYPO.body.size, color: BODY_INK },
         paragraph: {
+          // 引用块的竖线改由外层单格表格的左边框承载（见 renderQuoteContainer）：
+          // 加在样式上会和列表编号的缩进打架，出现两条不对齐的竖线。
+          // 这里只保留段落间距，缩进交给单元格内边距（在线为 12px）
           spacing: spacing(60, 60),
-          indent: { left: 420 },
-          // 左边框用黑色：在线虽然是品牌蓝，但用户要求 Word 里按常规引用样式呈现
-          border: {
-            left: { style: BorderStyle.SINGLE, size: 18, color: INK, space: 12 },
-          },
         },
       },
       {

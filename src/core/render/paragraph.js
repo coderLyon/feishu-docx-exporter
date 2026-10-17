@@ -16,7 +16,7 @@ import {
 } from 'docx';
 import { parseAttributedText } from '../text.js';
 import { runsToDocxChildren } from '../docx/runs.js';
-import { STYLE, BRAND_BLUE } from '../docx/styles.js';
+import { STYLE } from '../docx/styles.js';
 import { BULLET_REFERENCE } from '../docx/numbering.js';
 import { toHexColor } from '../../shared/util.js';
 
@@ -67,10 +67,8 @@ function headingPrefix(node, ctx, level, text) {
   return `${ctx.headingCounters.slice(0, level).join('.')}. `;
 }
 
-/** 引用块左边框：飞书在线是品牌蓝，属于 3370FF 保留白名单 */
-const QUOTE_BORDER = {
-  left: { style: BorderStyle.SINGLE, size: 18, color: BRAND_BLUE, space: 12 },
-};
+/** 引用块竖线颜色：取自在线文档实测（tools/probe-quote.mjs） */
+const QUOTE_BAR = 'BBBFC4';
 
 /** 正文 / 标题 */
 export function renderTextLike(node, ctx) {
@@ -163,13 +161,51 @@ export function renderTodo(node, ctx, level = 0) {
  *
  * 正确做法：只推进 quoteDepth，让子块自己渲染，缩进与蓝色左边框由 FdeQuote 样式承载。
  */
+/**
+ * 引用块：渲染成**单格表格**，竖线用表格的左边框。
+ *
+ * 为什么不把边框加在段落样式上：引用里常有列表，列表段落带 numPr，
+ * 而**编号自带的缩进会覆盖样式的缩进**，导致各段左边框落在不同的 x 上——
+ * 看起来就是「两条不对齐的竖线」（用户实测反馈）。表格边框位置固定，一次解决。
+ *
+ * 规格取自在线文档实测（tools/probe-quote.mjs）：
+ *   竖线 2px = 1.5pt、颜色 #BBBFC4（灰）、容器无底色、
+ *   内容左缩进 12px（=180 twips）、文字仍为正常深色 #1F2329。
+ */
 export function renderQuoteContainer(node, ctx, level = 0) {
   ctx.quoteDepth += 1;
+  let inner;
   try {
-    return ctx.renderChildren(node.children, level);
+    inner = ctx.renderChildren(node.children, level);
   } finally {
     ctx.quoteDepth -= 1;
   }
+
+  return [
+    new Table({
+      width: { size: 100, type: WidthType.PERCENTAGE },
+      borders: {
+        top: { style: BorderStyle.NONE },
+        bottom: { style: BorderStyle.NONE },
+        right: { style: BorderStyle.NONE },
+        left: { style: BorderStyle.SINGLE, size: 12, color: QUOTE_BAR },
+        insideHorizontal: { style: BorderStyle.NONE },
+        insideVertical: { style: BorderStyle.NONE },
+      },
+      rows: [
+        new TableRow({
+          children: [
+            new TableCell({
+              margins: { top: 0, bottom: 0, left: 180, right: 0 },
+              children: inner.length
+                ? inner
+                : [new Paragraph({ children: [], style: STYLE.body })],
+            }),
+          ],
+        }),
+      ],
+    }),
+  ];
 }
 
 /** 高亮块（callout）：用单单元格表格模拟带底色的容器 */
@@ -308,4 +344,4 @@ export function renderPlaceholder(node, ctx, message) {
   ];
 }
 
-export { alignOf, indentFor, QUOTE_BORDER };
+export { alignOf, indentFor, QUOTE_BAR };

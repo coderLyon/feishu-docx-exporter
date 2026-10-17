@@ -72,7 +72,7 @@ export class Cdp {
           this.pending.delete(id);
           reject(new Error(`CDP ${method} 超时`));
         }
-      }, 60000);
+      }, 180000); // 大文档采集期间主线程可能被长时间占用，60s 容易误判超时
     });
   }
 

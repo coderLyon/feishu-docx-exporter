@@ -8,6 +8,7 @@
 
 export const MSG = {
   zh: {
+    sheetTooWide: (n) => `内嵌表格列数较多（${n} 列），已保留截图以保证版式`, 
     resourceHint: (detail) => `部分图片/表格未采到（${detail}），建议重新导出一次；若仍缺失请反馈文档链接`, 
     unsupported: (type) => `未支持的内容块：${type}`,
     blockError: (type) => `${type} 渲染异常`,
@@ -23,6 +24,7 @@ export const MSG = {
     noToken: () => '（缺少 token）',
   },
   en: {
+    sheetTooWide: (n) => `Embedded sheet has ${n} columns; kept as image to preserve layout`, 
     resourceHint: (detail) => `Some images/sheets were not captured (${detail}); please export again. Report the doc link if it persists`, 
     unsupported: (type) => `Unsupported block: ${type}`,
     blockError: (type) => `${type} render failed`,

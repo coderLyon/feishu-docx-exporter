@@ -659,7 +659,33 @@ async function scanPass(scroller, state, onProgress) {
 
       if (capture) {
         const bucket = target.kind === 'sheet' ? state.sheets : state.whiteboards;
-        bucket.push({ ...capture, docY });
+        // 内嵌表格：若外部（tools/extract-sheets.mjs）已通过飞书「复制」拿到 TSV，
+        // 就挂在资源上，渲染阶段会生成真正的 Word 表格而不是截图
+        let table = null;
+        if (target.kind === 'sheet') {
+          try {
+            // 块 id 在不同渲染路径下可能挂在容器自身或其祖先上，逐个试；
+            // 都取不到再退回「文档内第 n 个表格」的下标键
+            const candidates = [];
+            const near = target.container.closest('[data-block-type="sheet"]');
+            if (near) candidates.push(near.getAttribute('data-block-id'));
+            candidates.push(target.container.getAttribute?.('data-block-id'));
+            const all = [...document.querySelectorAll('[data-block-type="sheet"], .docx-sheet-block')];
+            for (const id of candidates) {
+              if (id && localStorage.getItem('fde-sheet-' + id)) {
+                table = localStorage.getItem('fde-sheet-' + id);
+                break;
+              }
+            }
+            if (!table) {
+              const idx = all.indexOf(target.container) >= 0 ? all.indexOf(target.container) : all.indexOf(near);
+              if (idx >= 0) table = localStorage.getItem('fde-sheet-' + idx) || null;
+            }
+          } catch {
+            /* localStorage 不可用则忽略 */
+          }
+        }
+        bucket.push({ ...capture, docY, ...(table ? { table } : {}) });
       } else {
         state.seenKeys.delete(key); // 没抓到就放开，下一遍再试
       }

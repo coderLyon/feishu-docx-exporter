@@ -16,6 +16,7 @@ import { PX_TO_EMU } from '../../shared/constants.js';
 import { t } from '../../shared/messages.js';
 import { sanitizeXmlText } from '../../shared/util.js';
 import { STYLE } from '../docx/styles.js';
+import { computeColumnWidths } from './table.js';
 
 /** 按页面宽度等比缩放 */
 function fitImage(width, height, maxWidthPx) {
@@ -113,39 +114,21 @@ function buildSheetTable(tsv, ctx) {
   const colCount = Math.max(...rows.map((r) => r.length));
   if (colCount < 1 || colCount > 40 || rows.length > 400) return null;
 
-  // 版式可行性：竖版版心放不下这么多列时，真表格会被压到每列 60px、
-  // 文字全折行（比截图更难看）。这种情况保留截图，版式更忠实。
-  // 估算：每列最少容纳「最长不可断 token」，另加左右内边距。
-  const fontSizePx = 10.5 * (96 / 72);
-  const padPx = 16;
-  let needPx = 0;
-  for (let ci = 0; ci < colCount; ci += 1) {
-    let longest = 0;
-    for (const r of rows) {
-      const raw = String(r[ci] ?? '');
-      const runs = raw.match(/[A-Za-z0-9_\-/.%:]+/g) ?? [];
-      const ascii = runs.reduce((m, x) => Math.max(m, x.length), 0) * 0.52 * fontSizePx;
-      // 中文最少按 2 字宽算（允许多行折行）
-      const cjk = 2 * fontSizePx;
-      longest = Math.max(longest, Math.max(ascii, cjk));
-    }
-    needPx += longest + padPx;
-  }
-  if (needPx > (ctx.contentWidthPx ?? 674)) {
+  // 列宽：与普通表格同一套「尽量不折行」算法；连不可断 token 都放不下就回退截图
+  const columnTexts = Array.from({ length: colCount }, (_, ci) => rows.map((r) => (r[ci] ?? '').trim()));
+  const available = ctx.pageContentWidth ?? 10106;
+  const widths = computeColumnWidths(columnTexts, available);
+  const sumToken = widths.reduce((a, w) => a + w, 0);
+  if (sumToken > available * 1.02) {
     ctx.report.degraded.push(t('sheetTooWide', ctx.lang)(colCount));
     return null;
   }
-
-  // 列宽：按每列最长不可断 token 估下限，剩余空间均分（与普通表格同一套策略）
-  const widths = ctx.tableWidthsFor
-    ? ctx.tableWidthsFor(rows, colCount)
-    : undefined;
 
   const border = { style: BorderStyle.SINGLE, size: 4, color: '000000' };
   const table = new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
     borders: { top: border, bottom: border, left: border, right: border, insideHorizontal: border, insideVertical: border },
-    ...(widths ? { columnSizes: widths.map((w) => Math.round(w / 15)) } : {}),
+    columnWidths: widths,
     rows: rows.map(
       (cells, rowIndex) =>
         new TableRow({
@@ -194,11 +177,17 @@ export function renderSheet(node, ctx) {
   const token = node.data?.token ?? '';
   const resource = ctx.takeResource('sheet');
 
-  // 优先用「提取到的单元格数据」渲染成真正的 Word 表格（可编辑、可搜索、清晰）。
-  // 数据来自飞书自身的复制功能（TSV），拿不到时才退回截图。
-  if (resource?.table) {
-    const built = buildSheetTable(resource.table, ctx);
-    if (built) return built;
+  // 用户可在面板选择内嵌表格的导出方式：
+  //   'image'（默认）—— 截图，版式最忠实
+  //   'table'        —— Word 原生表格，可编辑可搜索（需要先提取到单元格数据）
+  if (ctx.options?.embeddedSheet === 'table') {
+    if (resource?.table) {
+      const built = buildSheetTable(resource.table, ctx);
+      if (built) return built;
+      // 数据拿到了但版心放不下/格式异常 → 继续走图片，下面会补一条降级说明
+    } else if (resource?.data) {
+      ctx.report.degraded.push(t('sheetNoCellData', ctx.lang)());
+    }
   }
 
   if (resource?.data) {

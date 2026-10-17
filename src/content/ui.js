@@ -133,6 +133,13 @@ export class ExportPanel {
           <label class="fde-label">字体</label>
           <select class="fde-select" data-act="select" data-key="fontScheme">${fontOptions}</select>
         </div>
+        <div class="fde-group">
+          <label class="fde-label">内嵌表格</label>
+          <select class="fde-select" data-act="select" data-key="embeddedSheet">
+            <option value="image" ${o.embeddedSheet !== 'table' ? 'selected' : ''}>导出为图片（推荐）</option>
+            <option value="table" ${o.embeddedSheet === 'table' ? 'selected' : ''}>导出为可编辑表格</option>
+          </select>
+        </div>
         <p class="fde-hint">再次点击工具栏图标可收起面板；仅发送只读请求，不会修改文档。</p>
       </div>
       <div class="fde-foot">

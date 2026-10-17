@@ -37,41 +37,87 @@ const BORDER = { style: BorderStyle.SINGLE, size: 4, color: TABLE_BORDER_COLOR }
  *   2. 剩下的空间按原始比例分给各列（宽列多吃）
  *   3. 若下限之和已超出版心，等比压缩（此时只能接受折行）
  */
-function fitWidths(widthsPx, availableTwips, contentMinTwips = []) {
-  const MIN = 720;
-  const base = widthsPx.map((w) => Math.max(1, Math.round(w * PX_TO_TWIP)));
-  const mins = base.map((_, i) => Math.max(MIN, Math.round(contentMinTwips[i] ?? MIN)));
-  const minSum = mins.reduce((a, b) => a + b, 0);
-
-  if (minSum >= availableTwips) {
-    const k = availableTwips / minSum;
-    return mins.map((w) => Math.max(240, Math.floor(w * k)));
+/** 估算一段文本的显示宽度（px）：中文 1em，ASCII 约 0.52em */
+function textWidthPx(text, fontSizePt = 10.5) {
+  const em = fontSizePt * (96 / 72);
+  let px = 0;
+  for (const ch of String(text ?? '')) {
+    px += /[\u4e00-\u9fa5\u3000-\u303f\uff00-\uffef]/.test(ch) ? em : em * 0.52;
   }
-
-  const rest = availableTwips - minSum;
-  const baseSum = base.reduce((a, b) => a + b, 0) || 1;
-  return mins.map((m, i) => m + Math.floor((rest * base[i]) / baseSum));
+  return px;
 }
 
 /**
- * 估算一列需要的下限宽度：取该列最长「不可断 token」的宽度。
- * 中文可任意断行，只按 2 个字算；ASCII/数字串（日期、编码、URL）整段不可断。
+ * 计算表格列宽（twips），目标：**尽量不折行**。
+ *
+ * 两档宽度：
+ *   tokenW[i]   —— 该列最长「不可断 token」的宽度（物理下限，再窄就断词）
+ *   contentW[i] —— 该列最长单元格整行放下的宽度（理想值，放得下就一行）
+ *
+ * 分配策略：
+ *   1. 所有 contentW 之和 ≤ 版心 → 直接按 contentW 分配（**零折行**），余量按内容比例摊
+ *   2. 装不下 → 先给每列 tokenW 保底，再把剩余空间按「缺口比例」补给最需要的列
+ *      （这样短列不浪费、长列也能多得，整体折行最少）
  */
-function contentMinFor(cellTexts, fontSizePt = 10.5) {
-  const pxPerAscii = fontSizePt * 0.52 * (96 / 72);
-  const pxPerCjk = fontSizePt * (96 / 72);
-  const PAD = 12; // 左右单元格内边距
-  let maxPx = 0;
-  for (const text of cellTexts) {
-    const raw = String(text ?? '');
-    // 拆出 ASCII 连续串（含数字、下划线、斜杠、冒号等），中文单独计 2 字宽
-    const asciiRuns = raw.match(/[A-Za-z0-9_\-/.%:]+/g) ?? [];
-    const longest = asciiRuns.reduce((m, r) => Math.max(m, r.length), 0);
-    const width = longest * pxPerAscii + 2 * pxPerCjk + PAD;
-    if (width > maxPx) maxPx = width;
+export function computeColumnWidths(columnTexts, availableTwips, widthsPx = [], fontSizePt = 10.5) {
+  const MIN = 600; // 约 30pt，再窄也放不下内容
+  const PAD = 12; // 左右单元格内边距（px）
+  const cols = columnTexts.map((texts) => {
+    let tokenMax = 0;
+    let contentMax = 0;
+    for (const raw of texts) {
+      const text = String(raw ?? '');
+      if (!text) continue;
+      const runs = text.match(/[A-Za-z0-9_\-/.%:]+/g) ?? [];
+      const longestToken = runs.reduce((m, r) => Math.max(m, r.length), 0);
+      tokenMax = Math.max(tokenMax, textWidthPx('x'.repeat(longestToken), fontSizePt));
+      contentMax = Math.max(contentMax, textWidthPx(text, fontSizePt));
+    }
+    return {
+      token: Math.max(MIN, Math.round((tokenMax + PAD) * PX_TO_TWIP)),
+      content: Math.max(MIN, Math.round((contentMax + PAD) * PX_TO_TWIP)),
+    };
+  });
+
+  // 基准用**飞书原始列宽**（作者已按内容调过），只在必要时做两件事：
+  //   1. 把「装不下最长不可断 token」的列补到下限（避免 2026/09/21 被拆行）
+  //   2. 若补齐后超出，从最富余的列（width - token 最大）按比例借
+  // 这样既尊重原版面，又消除断词；纯内容驱动的版本实测会让页数变多。
+  const hasSrc = Array.isArray(widthsPx) && widthsPx.length === cols.length;
+  const src = hasSrc
+    ? widthsPx.map((w) => Math.max(1, Math.round(w * PX_TO_TWIP)))
+    : cols.map((c) => c.content); // 没有原始列宽时按内容等比
+  const srcSum = src.reduce((a, b) => a + b, 0) || 1;
+  const width = cols.map((c, i) => {
+    const scaled = Math.floor((availableTwips * (src[i] ?? 1)) / srcSum);
+    // 内容极短时不必撑太宽：不超过该列内容的整行宽度
+    return Math.max(c.token, Math.min(scaled, Math.max(c.token, c.content)));
+  });
+
+  let sum = width.reduce((a, b) => a + b, 0);
+  if (sum > availableTwips) {
+    const over = sum - availableTwips;
+    const slack = width.reduce((a, v, i) => a + Math.max(0, v - cols[i].token), 0) || 1;
+    sum = 0;
+    return width.map((v, i) => {
+      const room = Math.max(0, v - cols[i].token);
+      return v - Math.floor((over * room) / slack);
+    });
   }
-  return Math.round(maxPx * PX_TO_TWIP);
+
+  // 还有余量：给「内容放不下」的列加宽，减少折行（按缺口比例分）
+  const left = availableTwips - sum;
+  const gaps = cols.map((c, i) => Math.max(0, c.content - width[i]));
+  const gapSum = gaps.reduce((a, b) => a + b, 0);
+  if (gapSum <= 0) return width;
+  return width.map((w, i) => w + Math.floor((left * gaps[i]) / gapSum));
 }
+
+/** 兼容旧调用：按 px 宽度列表 + 每列内容下限计算 */
+function fitWidths(widthsPx, availableTwips, columnTexts) {
+  return computeColumnWidths(columnTexts, availableTwips, widthsPx);
+}
+
 
 /**
  * @param {Object} node table 块
@@ -109,8 +155,7 @@ export function renderTable(node, ctx) {
     }
     return texts;
   });
-  const contentMins = columnTexts.map((texts) => contentMinFor(texts));
-  const widths = fitWidths(widthsPx, ctx.pageContentWidth, contentMins);
+  const widths = computeColumnWidths(columnTexts, ctx.pageContentWidth, widthsPx);
 
   // 表头判据来自飞书数据本身：data.header_row === true 表示 rows_id[0] 是表头。
   // false 的表首行是「请求参数（HEAD）」这类跨列合并的分节行，按表头渲染会出错。

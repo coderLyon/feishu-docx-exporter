@@ -8,13 +8,14 @@
 
 ## 安装（普通用户）
 
-1. 打开本仓库的 [Releases](../../releases) 页，下载最新版 `飞书文档导出Word扩展.zip`；
+1. 打开本仓库的 [Releases](../../releases) 页，下载最新版 `feishu-docx-exporter-vX.Y.Z.zip`；
 2. 解压到任意**固定目录**（例如 `D://Tools//feishu-word`，装好后不要删）；
 3. Chrome / Edge 地址栏输入 `chrome://extensions`（Edge 为 `edge://extensions`），打开右上角「开发者模式」；
 4. 点「加载已解压的扩展程序」，选择**解压出来的目录**（里面有 `manifest.json` 那一层）；
 5. 打开任意飞书文档（`/wiki/*`、`/docx/*`），右下角出现蓝色悬浮按钮即安装成功。
 
 > 升级：下载新版 zip → 覆盖解压到同一目录 → 回 `chrome://extensions` 点该扩展的「重新加载」。
+> 注：Release 附件用 ASCII 文件名（`feishu-docx-exporter-vX.Y.Z.zip`），因为中文名在部分命令行/系统上会被截断。
 > 卸载：在扩展页点「移除」，再删掉那个目录即可。
 
 ## 使用

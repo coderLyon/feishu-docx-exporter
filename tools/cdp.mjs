@@ -5,10 +5,29 @@
  * browser/context 抽象，内存与启动开销都远大于直连 WebSocket。而我们要做的
  * 只是「eval 一段 JS」和「截一张图」，原始 CDP 足够。
  */
+import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
 export const PORT = Number(process.env.FDE_DEBUG_PORT ?? 9222);
+
+/**
+ * 心跳文件：任何 CDP 使用方（导出/下载/探测脚本）都会刷新它，
+ * serve-chrome 据此判断「是否还有人在用」，超时无人使用就自我了断并关掉 Chrome。
+ * 这样即使忘了手动停止后台任务，也不会长期占着内存。
+ */
+export const HEARTBEAT = path.join(os.homedir(), '.fde-chrome-heartbeat');
+let lastBeat = 0;
+export function touchHeartbeat() {
+  const now = Date.now();
+  if (now - lastBeat < 5000) return; // 5 秒内只写一次，避免频繁 IO
+  lastBeat = now;
+  try {
+    fs.writeFileSync(HEARTBEAT, String(now));
+  } catch {
+    /* 心跳失败不影响主流程 */
+  }
+}
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -23,6 +42,7 @@ export class Cdp {
   }
 
   static async connect(port = PORT, timeout = 15000) {
+    touchHeartbeat();
     const res = await fetch(`http://127.0.0.1:${port}/json/version`, { cache: 'no-store' });
     if (!res.ok) throw new Error(`调试端口 ${port} 返回 HTTP ${res.status}`);
     const version = await res.json();
@@ -61,6 +81,7 @@ export class Cdp {
   }
 
   send(method, params = {}, sessionId = this.sessionId) {
+    touchHeartbeat();
     const id = (this.id += 1);
     const payload = { id, method, params };
     if (sessionId) payload.sessionId = sessionId;

@@ -228,6 +228,24 @@ XML 1.0 禁止 0x20 以下的控制字符，Word 于是判定文件损坏——�
 - 文档补登：TOOLS.md 增「与官方产物对比」「诊断脚本」两节；VERIFICATION.md 补 F2 与 r049–r053；
   修正过期的 `--expect tables=23` → `24`（引用块计入表格）
 
+
+## v0.2.2（2026-10-17）：修复调试 Chrome 后台任务不自动关闭
+
+**用户反馈**：开启的后台任务用完不会关闭，Chrome 残留一堆进程占内存。
+
+**两个根因**：
+1. `serve-chrome.mjs` 是 `for(;;)` 死循环，**没有任何退出条件**
+2. **没有信号处理**——后台任务被停时 node 死了，但它 spawn 的 Chrome 成了孤儿进程残留（实测 8–10 个）
+
+**修复（机制化，不依赖人记得清理）**：
+- **空闲自毁**：任何 CDP 使用方都会刷新心跳文件 `~/.fde-chrome-heartbeat`；
+  `serve-chrome` 每 5 秒检查，超过 `--idle` 分钟（默认 10）无人使用就杀掉 Chrome 树并退出
+- **信号清理**：注册 SIGINT/SIGTERM/SIGHUP/SIGBREAK/exit，用 `taskkill /F /T /PID` 杀整棵进程树
+- **一键停止**：`npm run chrome:stop`（`tools/stop-chrome.mjs`）——先停持有者再杀 Chrome，避免"杀了 Chrome 又被重启"
+
+**实测**：`--idle=1` 启动后 1 分钟自动收尾、chrome 进程 0 个、心跳文件已清理；
+直接停后台任务后 chrome 同样归零。
+
 ## 已知遗留
 
 1. 内嵌电子表格原生化（接口与解码路径已存档，卡在私有二进制格式）

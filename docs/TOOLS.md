@@ -15,8 +15,13 @@
 
 | 脚本 | 用法 | 说明 |
 | --- | --- | --- |
+> **防泄漏机制（v0.2.2）**：`serve-chrome` 带空闲自毁（默认 10 分钟无 CDP 使用即自动关 Chrome 退出），
+> 并在收到 SIGINT/SIGTERM/exit 时用 `taskkill /T` 杀掉整棵 Chrome 进程树；
+> 任何 CDP 使用方（导出/下载/探测）都会自动刷新心跳。即使忘了停后台任务也不会长期占内存。
+
 | `tools/open-doc.mjs` | `node tools/open-doc.mjs <URL>` | 把已打开的调试 Chrome 导航到指定文档（复用同一标签页；**不要关闭唯一标签页**，否则窗口会一起关掉） |
-| `tools/serve-chrome.mjs` | `node tools/serve-chrome.mjs [文档URL]` | **后台常驻启动 Chrome**（远程调试端口 9222，profile `.chrome-user`）。必须用后台任务持有，否则 spawn 的进程会被回收 |
+| `npm run chrome:stop` | 一键停止：先停 serve-chrome 常驻进程（否则它会重启 Chrome），再杀 Chrome 进程树，最后清心跳文件 |
+| `tools/serve-chrome.mjs --idle=10` | `node tools/serve-chrome.mjs [文档URL]` | **后台常驻启动 Chrome**（远程调试端口 9222，profile `.chrome-user`）。必须用后台任务持有，否则 spawn 的进程会被回收 |
 | `tools/export-run.mjs` | `node tools/export-run.mjs r021 [--reload]` | 真实加载扩展跑一次导出，产出 `samples/runs/<id>/source.docx` |
 | `tools/check-styles.mjs` | `node tools/check-styles.mjs <docx> [--json f] [--expect tables=24]` | 样式/结构断言，退出码 0 通过 / 1 失败 / 2 用法错误 |
 | `tools/render-offline.mjs` | `node tools/render-offline.mjs [out.docx] [--sample=...] [--host=...]` | L0 离线渲染（不启 Chrome） |

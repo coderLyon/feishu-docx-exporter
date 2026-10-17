@@ -117,8 +117,8 @@ function buildSheetTable(tsv, ctx) {
   // 列宽：与普通表格同一套「尽量不折行」算法；连不可断 token 都放不下就回退截图
   const columnTexts = Array.from({ length: colCount }, (_, ci) => rows.map((r) => (r[ci] ?? '').trim()));
   const available = ctx.pageContentWidth ?? 10106;
-  const widths = computeColumnWidths(columnTexts, available);
-  const sumToken = widths.reduce((a, w) => a + w, 0);
+  const widths = null; // 不再手算列宽，交给 Word AutoFit
+  const sumToken = 0;
   if (sumToken > available * 1.02) {
     ctx.report.degraded.push(t('sheetTooWide', ctx.lang)(colCount));
     return null;
@@ -128,7 +128,7 @@ function buildSheetTable(tsv, ctx) {
   const table = new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
     borders: { top: border, bottom: border, left: border, right: border, insideHorizontal: border, insideVertical: border },
-    columnWidths: widths,
+    // 交给 Word 自动调整列宽（同上，手算不如 AutoFit）
     rows: rows.map(
       (cells, rowIndex) =>
         new TableRow({

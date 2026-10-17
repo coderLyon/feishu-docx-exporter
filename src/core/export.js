@@ -47,6 +47,8 @@ export async function exportToDocx({ url, options, resources, onProgress }) {
 
   const ctx = createRenderContext({
     byId,
+    // 表格单元格块不在 blockSequence 里（只存于 blockMap），列宽估算需要它兜底
+    blockMap: doc.blockMap ?? {},
     options,
     resources,
     host: location.hostname,

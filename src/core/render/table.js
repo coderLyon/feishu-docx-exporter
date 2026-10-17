@@ -61,56 +61,78 @@ function textWidthPx(text, fontSizePt = 10.5) {
  */
 export function computeColumnWidths(columnTexts, availableTwips, widthsPx = [], fontSizePt = 10.5) {
   const MIN = 600; // 约 30pt，再窄也放不下内容
-  const PAD = 12; // 左右单元格内边距（px）
+  const PAD = 22; // 左右单元格内边距 + 边框占位（px）；实测 12 偏小会让 token 仍被拆
   const cols = columnTexts.map((texts) => {
     let tokenMax = 0;
     let contentMax = 0;
     for (const raw of texts) {
       const text = String(raw ?? '');
       if (!text) continue;
-      const runs = text.match(/[A-Za-z0-9_\-/.%:]+/g) ?? [];
+      const runs = text.match(/[A-Za-z0-9_\-/.%:()\[\]]+/g) ?? [];
       const longestToken = runs.reduce((m, r) => Math.max(m, r.length), 0);
       tokenMax = Math.max(tokenMax, textWidthPx('x'.repeat(longestToken), fontSizePt));
       contentMax = Math.max(contentMax, textWidthPx(text, fontSizePt));
     }
+    // token 下限要封顶：像 PLAN_WO_JDZJ.DEVICE_PLAN_ID 这种 27 字符的标识符，
+    // 如果硬要整行放会吃掉版心 1/3，把说明列挤到每行两三个字。
+    // 飞书原稿里这类长串本来也是折行的，所以上限取「16 字符」与「版心 22%」的较小值。
+    const capPx = Math.min(16 * fontSizePt * 0.52 * (96 / 72), availableTwips * 0.22 / PX_TO_TWIP);
     return {
-      token: Math.max(MIN, Math.round((tokenMax + PAD) * PX_TO_TWIP)),
+      token: Math.max(MIN, Math.round((Math.min(tokenMax, capPx) + PAD) * PX_TO_TWIP)),
       content: Math.max(MIN, Math.round((contentMax + PAD) * PX_TO_TWIP)),
     };
   });
 
-  // 基准用**飞书原始列宽**（作者已按内容调过），只在必要时做两件事：
-  //   1. 把「装不下最长不可断 token」的列补到下限（避免 2026/09/21 被拆行）
-  //   2. 若补齐后超出，从最富余的列（width - token 最大）按比例借
-  // 这样既尊重原版面，又消除断词；纯内容驱动的版本实测会让页数变多。
+  // 排版策略（三轮实测后的结论）：
+  //   1. 交给 Word AutoFit 会把握不住的列压成竖排（「字段名称」四个字一字一行）
+  //   2. 纯手算又容易把说明列挤死或让表格变窄
+  // 所以：固定布局 + 精确下限。每条列宽都要满足三件事：
+  //   a) ≥ 表头/短内容能横排的最小宽度（避免一字一行）
+  //   b) ≥ 关键 token 宽度（日期、编码不折断；超长标识符允许折行，故封顶）
+  //   c) 合计正好等于版心宽度（否则表格变窄、右侧留白）
   const hasSrc = Array.isArray(widthsPx) && widthsPx.length === cols.length;
   const src = hasSrc
     ? widthsPx.map((w) => Math.max(1, Math.round(w * PX_TO_TWIP)))
-    : cols.map((c) => c.content); // 没有原始列宽时按内容等比
+    : cols.map((c) => c.content || 1);
   const srcSum = src.reduce((a, b) => a + b, 0) || 1;
-  const width = cols.map((c, i) => {
-    const scaled = Math.floor((availableTwips * (src[i] ?? 1)) / srcSum);
-    // 内容极短时不必撑太宽：不超过该列内容的整行宽度
-    return Math.max(c.token, Math.min(scaled, Math.max(c.token, c.content)));
-  });
+
+  // 每列的下限：minChars（表头 3~4 字能横排）与 token 宽度的较大者
+  const MIN_CHARS = 4;
+  const floorPx = MIN_CHARS * fontSizePt * (96 / 72) + PAD;
+  const floor = cols.map((c) => Math.max(Math.round(floorPx * PX_TO_TWIP), Math.min(c.token, Math.round(availableTwips * 0.24))));
+
+  // 起点：原比例，但不低于下限
+  const width = cols.map((c, i) => Math.max(floor[i], Math.round((availableTwips * src[i]) / srcSum)));
 
   let sum = width.reduce((a, b) => a + b, 0);
+
+  // 超宽：从「余量最多」的列按比例削（不削到下限以下）
   if (sum > availableTwips) {
     const over = sum - availableTwips;
-    const slack = width.reduce((a, v, i) => a + Math.max(0, v - cols[i].token), 0) || 1;
-    sum = 0;
-    return width.map((v, i) => {
-      const room = Math.max(0, v - cols[i].token);
-      return v - Math.floor((over * room) / slack);
-    });
+    const slack = width.map((w, i) => Math.max(0, w - floor[i]));
+    const slackSum = slack.reduce((a, b) => a + b, 0) || 1;
+    for (let i = 0; i < width.length; i += 1) {
+      width[i] -= Math.floor((over * slack[i]) / slackSum);
+    }
+    sum = width.reduce((a, b) => a + b, 0);
   }
 
-  // 还有余量：给「内容放不下」的列加宽，减少折行（按缺口比例分）
-  const left = availableTwips - sum;
-  const gaps = cols.map((c, i) => Math.max(0, c.content - width[i]));
-  const gapSum = gaps.reduce((a, b) => a + b, 0);
-  if (gapSum <= 0) return width;
-  return width.map((w, i) => w + Math.floor((left * gaps[i]) / gapSum));
+  // 归一化：差额补给「内容缺口最大」的列（通常是说明），保证正好铺满
+  if (sum !== availableTwips) {
+    const diff = availableTwips - sum;
+    let best = 0;
+    let bestGap = -Infinity;
+    for (let i = 0; i < width.length; i += 1) {
+      const gap = cols[i].content - width[i];
+      if (gap > bestGap) {
+        bestGap = gap;
+        best = i;
+      }
+    }
+    width[best] += diff;
+  }
+
+  return width;
 }
 
 /** 兼容旧调用：按 px 宽度列表 + 每列内容下限计算 */
@@ -135,21 +157,29 @@ export function renderTable(node, ctx) {
   const widthsPx = columnsId.map((id) => columnSet[id]?.column_width ?? 120);
 
   // 逐列统计单元格文本，算出「不让长 token 折断」所需的列宽下限
+  // 注意：表格单元格块**不在 blockSequence 里**（只在 blockMap 中），
+  // 所以不能只用 ctx.byId —— 之前正是这里取不到文本，导致列宽估算退化成「按原比例」，
+  // 长 token（devicePlanId / VARCHAR(64)）照样被拆行。
+  const getData = (id) => {
+    if (!id) return null;
+    const node = ctx.byId.get(id);
+    if (node?.data) return node.data;
+    const raw = ctx.blockMap?.[id];
+    return raw?.data ?? raw ?? null;
+  };
+  const textOf = (data) =>
+    data?.text ? Object.values(data.text.initialAttributedTexts?.text ?? {}).join('') : '';
+
   const columnTexts = columnsId.map((cid) => {
     const texts = [];
     for (const rid of rowsId) {
       const info = cellSet[`${rid}${cid}`];
-      const block = info?.block_id ? ctx.byId.get(info.block_id) : null;
-      if (!block) continue;
-      const plain = block.data?.text
-        ? Object.values(block.data.text.initialAttributedTexts?.text ?? {}).join('')
-        : '';
+      const cellData = getData(info?.block_id);
+      if (!cellData) continue;
+      const plain = textOf(cellData);
       if (plain) texts.push(plain);
-      for (const child of block.children ?? []) {
-        const cb = ctx.byId.get(child);
-        const childText = cb?.data?.text
-          ? Object.values(cb.data.text.initialAttributedTexts?.text ?? {}).join('')
-          : '';
+      for (const child of cellData.children ?? []) {
+        const childText = textOf(getData(child));
         if (childText) texts.push(childText);
       }
     }
@@ -238,9 +268,10 @@ export function renderTable(node, ctx) {
   return [
     new Table({
       rows,
+      // 固定布局：columnWidths 才会被严格采用。
+      // （试过 AUTOFIT：Word 会把「字段名称」「必输」这类短列表头压成竖排，
+      //   实测反而更糟；AutoFit 只适合作为参考，最终仍要给出精确列宽）
       columnWidths: widths,
-      // FIXED 布局：columnWidths 的 DXA 值才会被严格采用。
-      // AUTOFIT 会让 Word 按内容重新分配列宽，在线的列宽比例就丢了
       layout: TableLayoutType.FIXED,
       width: { size: 100, type: WidthType.PERCENTAGE },
       borders: {

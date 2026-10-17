@@ -107,6 +107,42 @@ Packer.toBlob() → content script 建 blob URL → service-worker chrome.downlo
 19. **排版三件套**：标题 `keepNext`（不与正文分离）、表格行与代码块 `cantSplit`（不跨页劈开）、
     表头 `tableHeader`（跨页重复）。缺 keepNext 会出现「标题孤悬页底」，长文档里最伤连贯性。
 
+
+### 5.1 内嵌电子表格数据接口（2026-10-17 有新进展，结论已改写）
+
+**旧结论「飞书没有单元格数据接口」已不准确**。实测发现：
+
+1. 文档渲染内嵌表格时，页面会请求 `POST /space/api/v3/sheet/client_vars`，
+   返回的 `snapshot` 含 `gzipBlockMeta` / `blocks` / `gzipTopSnapshot` / `gzipResource`。
+2. `gzipBlockMeta` **base64+gzip 解开就是 JSON**，给出块清单与范围：
+   `{"GO44OU":{"cellBlockMetas":[{"range":{"rowStart":0,"rowEnd":23,"colStart":0,"colEnd":11},
+   "blockId":"block_…","size":1555,"gzipSize":885}]}}`
+3. `blocks[blockId]` 同样是 base64+gzip，解开是 **protobuf**，**单元格文本是明文 UTF-8**
+   （可直接看到「模块」「阅读」「编辑」「Windows」「通过」「待测试」…）。
+
+**已摸清的结构**（`tools/probe-sheet-pb.mjs` 转储）：
+```
+f1.f2.f12                       ← 工作表数据
+  f1   = {rowStart, rowEnd, colStart, colEnd, sheetId}
+  f2   = 字符串池（32 条）
+  f3   = 样式/颜色（#8ee085 / #fbbfbc / #dee0e3…）
+  f4   = 单元格坐标/格式记录（20 条，字段 f1..f6）
+  f6   = 行数据（1 + 39 条子消息）
+```
+
+**为什么还没有落地成「可编辑表格」**：
+坐标记录与行数据的语义尚未唯一确定（同一 (row,col) 出现多条记录、
+字段含义无官方文档），**猜错的代价是把单元格错位——比截图更糟**。
+需要的是「重建网格 → 与截图文本集合比对」的验证夹具，再逐步锁定字段含义。
+
+**可行的另一条路（待验证）**：表格支持「下载为 Excel」。
+若能抓到该接口（同 Word 导出的套路），就能拿到权威的二维数据，
+比解析 protobuf 稳得多。本次尝试直接打开 `/sheets/<token>` 未成功
+（内嵌表格 token 不是独立可访问资源），需要从文档内菜单触发。
+
+复现工具：`tools/probe-sheet-api.mjs`（试端点）、`probe-sheet-network.mjs`（抓真实请求）、
+`probe-sheet-vars2.mjs`（抓响应并解 gzip）、`probe-sheet-block.mjs`（解块）、`probe-sheet-pb.mjs`（protobuf 转储）。
+
 ## 五、尚未打通的两条路（附证据）
 
 ### 内嵌电子表格 → 原生表格

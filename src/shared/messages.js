@@ -8,6 +8,7 @@
 
 export const MSG = {
   zh: {
+    resourceHint: (detail) => `部分图片/表格未采到（${detail}），建议重新导出一次；若仍缺失请反馈文档链接`, 
     unsupported: (type) => `未支持的内容块：${type}`,
     blockError: (type) => `${type} 渲染异常`,
     imageMissing: (token) => `图片未能从页面获取${token ? `（token ${token}）` : ''}`,
@@ -22,6 +23,7 @@ export const MSG = {
     noToken: () => '（缺少 token）',
   },
   en: {
+    resourceHint: (detail) => `Some images/sheets were not captured (${detail}); please export again. Report the doc link if it persists`, 
     unsupported: (type) => `Unsupported block: ${type}`,
     blockError: (type) => `${type} render failed`,
     imageMissing: (token) => `Image not captured${token ? ` (token ${token})` : ''}`,

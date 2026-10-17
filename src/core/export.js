@@ -1,5 +1,6 @@
 /** 导出编排：解析 -> 取数 -> 渲染 -> 打包 */
 import { loadDocument } from './api.js';
+import { t } from '../shared/messages.js';
 import { buildBlockTree } from './tree.js';
 import { createRenderContext, renderNode } from './render/index.js';
 import { buildDocx } from './docx/build.js';
@@ -59,6 +60,27 @@ export async function exportToDocx({ url, options, resources, onProgress }) {
   });
 
   const children = root ? renderNode(root, ctx, 0) : [];
+
+  // 资源完整性自检：拿文档里实际有多少图片/内嵌表格/画板块，与采集到的数量比较。
+  // 采集偶尔会漏（懒渲染未完成就翻过去了），用户只看到「降级为链接」却不知道该怎么办，
+  // 这里直接给出可执行的建议。
+  const countBlocks = (type) =>
+    Object.values(doc.blockMap ?? {}).filter((b) => b?.data?.type === type).length;
+  const expect = {
+    image: countBlocks('image'),
+    sheet: countBlocks('sheet'),
+    whiteboard: countBlocks('whiteboard'),
+  };
+  const got = {
+    image: resources?.images?.length ?? 0,
+    sheet: resources?.sheets?.length ?? 0,
+    whiteboard: resources?.whiteboards?.length ?? 0,
+  };
+  const missing = Object.keys(expect).filter((k) => expect[k] > got[k]);
+  if (missing.length) {
+    const label = t('resourceHint', ctx.lang)(missing.map((k) => `${k} ${got[k]}/${expect[k]}`).join('、'));
+    report.degraded.push(label);
+  }
 
   onProgress?.({ stage: 'pack', percent: 80, detail: '正在打包 docx' });
   const blob = await buildDocx({

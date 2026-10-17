@@ -143,7 +143,8 @@ export class ExportPanel {
   }
 
   busyHtml() {
-    const { percent, stage } = this.state.progress;
+    const { stage } = this.state.progress;
+    const percent = Math.max(0, Math.min(100, Math.round(Number(this.state.progress.percent) || 0)));
     const currentIndex = STAGES.findIndex((s) => s.id === stage);
     return `<div class="fde-panel">
       <div class="fde-panel-head">

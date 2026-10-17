@@ -18,7 +18,7 @@
 | `tools/open-doc.mjs` | `node tools/open-doc.mjs <URL>` | 把已打开的调试 Chrome 导航到指定文档（复用同一标签页；**不要关闭唯一标签页**，否则窗口会一起关掉） |
 | `tools/serve-chrome.mjs` | `node tools/serve-chrome.mjs [文档URL]` | **后台常驻启动 Chrome**（远程调试端口 9222，profile `.chrome-user`）。必须用后台任务持有，否则 spawn 的进程会被回收 |
 | `tools/export-run.mjs` | `node tools/export-run.mjs r021 [--reload]` | 真实加载扩展跑一次导出，产出 `samples/runs/<id>/source.docx` |
-| `tools/check-styles.mjs` | `node tools/check-styles.mjs <docx> [--json f] [--expect tables=23]` | 样式/结构断言，退出码 0 通过 / 1 失败 / 2 用法错误 |
+| `tools/check-styles.mjs` | `node tools/check-styles.mjs <docx> [--json f] [--expect tables=24]` | 样式/结构断言，退出码 0 通过 / 1 失败 / 2 用法错误 |
 | `tools/render-offline.mjs` | `node tools/render-offline.mjs [out.docx] [--sample=...] [--host=...]` | L0 离线渲染（不启 Chrome） |
 | `tools/docx2pdf.ps1` | `powershell -File tools\docx2pdf.ps1 -Src <docx> -Dst <pdf>` | Word COM 转 PDF |
 | `tools/pdf2png.py` | `python tools/pdf2png.py <pdf> <outdir> --dpi 144 [--pages 1-25]` | PDF 逐页转 PNG（逐页释放，内存友好） |
@@ -49,6 +49,21 @@
 
 > 换文档测试是发现「特化代码」的唯一可靠手段——本轮一次就暴露了 4 类未支持块、
 > 1 个采集缺陷（重型块漏采）、3 处断言特化。
+
+
+## 四·六、与官方产物对比（2026-10 新增）
+
+| 脚本 | 用法 | 说明 |
+| --- | --- | --- |
+| `tools/fetch-official-word3.mjs` | `node tools/fetch-official-word3.mjs` | 自动走飞书 UI「••• → 下载为 → Word → 导出设置 → 导出」，把官方 docx 落到 `samples/official/`。前置：调试 Chrome 已登录并打开目标文档 |
+| `tools/compare-official.mjs` | `node tools/compare-official.mjs <官方.docx> <我们的.docx>` | 逐项对比页面设置、样式、引用、表格、图片尺寸。注意 `<w:tbl>` 计数含嵌套表，会重复计入 |
+| `tools/probe-quote.mjs` | `node tools/probe-quote.mjs` | 读取在线引用块的计算样式（竖线颜色/宽度/内边距），用于 1:1 复刻 |
+| `tools/probe-scroll-cost.mjs` | `node tools/probe-scroll-cost.mjs` | 隔离实验：只滚动不采集，判断卡顿来自飞书渲染还是我们的采集代码 |
+
+## 四·七、诊断脚本（按需使用，不参与正式验证）
+
+`probe.mjs`、`probe-page.mjs`、`probe-sheet.mjs`、`probe-wb.mjs`、`probe-font.mjs`、`probe-style.mjs`、
+`probe-embed.mjs`、`inspect.mjs`、`shot-state.mjs`（截当前视口）、`diag-resources.mjs`、`analyze-blocks.mjs`、`proto-dump.mjs`。
 
 ## 四、探测 / 研究 / 诊断（日常迭代不需要）
 

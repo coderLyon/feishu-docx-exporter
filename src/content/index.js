@@ -53,12 +53,14 @@ async function runExport(currentPanel, options) {
   try {
     const resources = await collectResources({
       onProgress: (info) => {
-        if (info?.stage === 'scroll' && info.total) {
-          currentPanel.setProgress({
-            stage: 'scroll',
-            percent: Math.min(38, Math.round((info.loaded / info.total) * 38)),
-          });
-        }
+        if (!info?.total) return;
+        const ratio = Math.max(0, Math.min(1, info.loaded / info.total));
+        // 预热 2→20%，正式扫描 20→38%，让用户在长文档上能看到持续进展
+        const span = info.stage === 'warmup' ? [2, 20] : [20, 38];
+        currentPanel.setProgress({
+          stage: info.stage === 'warmup' ? 'scroll' : 'scroll',
+          percent: Math.round(span[0] + ratio * (span[1] - span[0])),
+        });
       },
     });
 

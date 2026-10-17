@@ -341,6 +341,11 @@ async function captureCanvasBlock(container, { singleTile = false } = {}) {
     node = node.parentElement;
   }
 
+  // 只有「块自己的滚动容器」才做滚动拼接；若找到的是文档级滚动容器，
+  // 说明表格整块可见，按单块处理（拿文档 scrollHeight 估瓦片必然超限）
+  const docScroller = findDocScroller();
+  const effectiveSingleTile = singleTile || !scroller || scroller === docScroller;
+
   const restore = scroller ? { left: scroller.scrollLeft, top: scroller.scrollTop } : null;
 
   try {
@@ -389,7 +394,7 @@ async function captureCanvasBlock(container, { singleTile = false } = {}) {
       if (best >= 0.01) break;
     }
 
-    let stitched = await stitchCanvases([picked], scroller, { singleTile });
+    let stitched = await stitchCanvases([picked], scroller, { singleTile: effectiveSingleTile });
     if (stitched && canvasInkRatio(stitched.canvas) >= 0.01) {
       const flattened = flattenOnWhite(
         stitched.canvas,

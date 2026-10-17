@@ -56,7 +56,7 @@ const check = (id, desc, ok, detail = '') => {
 
 // ---------- A 结构哨兵 ----------
 // 通用性：绝不写死某篇文档的表格/图片/标题数量。
-// 只做「文档无关」的不变量；具体数量可用 --expect tables=23 之类覆写（回归时才传）。
+// 只做「文档无关」的不变量；具体数量可用 --expect tables=24 之类覆写（回归时才传）。
 const expect = Object.fromEntries(
   argv.filter((a) => a.startsWith('--expect=')).flatMap((a) =>
     a.slice(9).split(',').map((kv) => kv.split('=')),
@@ -205,6 +205,16 @@ for (const [name, buf] of entries) {
 }
 check('F1', 'XML 部件不含非法控制字符', badParts.length === 0,
   badParts.length ? `违规: ${badParts.join(', ')}` : `已扫描 ${[...entries.keys()].filter((n) => /\.(xml|rels)$/.test(n)).length} 个部件`);
+
+
+// F2（通用）：引用块必须是「单格表格 + 灰色左竖线」。
+// 这是 2026-10 的返工点：边框加在段落样式上会和列表编号缩进打架，
+// 出现两条不对齐的竖线；改由表格承载后位置才稳定。
+if (quoteParas.length) {
+  const barTables = [...xml.matchAll(/<w:tblBorders>[\s\S]{0,300}?<w:left[^>]*w:color="BBBFC4"/g)].length;
+  check('F2', '引用块为单格表格且竖线为 #BBBFC4', barTables > 0,
+    `引用段落 ${quoteParas.length} 个，带灰竖线的表格 ${barTables} 个`);
+}
 
 // ---------- 输出 ----------
 console.log(`文件: ${file}`);

@@ -115,6 +115,7 @@ export const DEFAULT_OPTIONS = {
   embedAttachments: true,
   // 采集提速：两趟自适应等待（关掉则回到旧的慢速三步走）
   fastCapture: true,
+  landscapeWide: false,
   pageSize: 'A4',
   pageMargin: 'normal',
   fontScheme: 'yahei',

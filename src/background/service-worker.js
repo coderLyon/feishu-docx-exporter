@@ -70,7 +70,13 @@ const sleepMs = (ms) => new Promise((r) => setTimeout(r, ms));
  */
 async function extractSheetWithDebugger(tabId, rect) {
   const cmd = (method, params) => chrome.debugger.sendCommand({ tabId }, method, params);
-  await chrome.debugger.attach({ tabId }, '1.3');
+  // attach 在「标签页已被 DevTools/CDP 接管」时会卡住不返回，必须加超时快速失败
+  await Promise.race([
+    chrome.debugger.attach({ tabId }, '1.3'),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('无法附加调试器：该标签页可能开着 DevTools，或已有其他调试连接')), 4000),
+    ),
+  ]);
   try {
     // 1) 点进表格
     for (const type of ['mousePressed', 'mouseReleased']) {

@@ -79,7 +79,15 @@ export async function extractSheetsLive(blockIds, { onProgress, timeoutMs = 1200
         new Promise((r) => setTimeout(() => r({ ok: false, error: 'timeout' }), timeoutMs)),
       ]);
       if (!res?.ok) {
-        out.push({ html: null, tsv: null, error: res?.error ?? '后台未完成按键' });
+        const err = res?.error ?? '后台未完成按键';
+        out.push({ html: null, tsv: null, error: err });
+        // 附加失败是环境问题，后面的表也一样会失败 —— 直接停止，别让用户干等
+        if (/附加|attach|DevTools/i.test(err)) {
+          for (let j = i + 1; j < blockIds.length; j += 1) {
+            out.push({ html: null, tsv: null, error: err });
+          }
+          break;
+        }
         continue;
       }
       // 后台已发完 trusted 的 Ctrl+A / Ctrl+C，这里读剪贴板（扩展有 clipboardRead 权限）

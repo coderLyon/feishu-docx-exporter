@@ -31,7 +31,10 @@ function imageParagraph(resource, ctx, caption, { allowLandscape = false } = {})
   // 只有「宽表格截图」才配横页；普通插图即便很宽也不该把整篇文档切成横的
   // （实测：无条件判定会把 845 块文档切成 11 节、5 个横向页）
   const contentPx = (ctx.pageContentWidth ?? 10106) / 15;
-  const isWide = allowLandscape && (resource?.width ?? 0) > contentPx * 1.15;
+  const isWide =
+    allowLandscape &&
+    ctx.options?.landscapeWide === true &&
+    (resource?.width ?? 0) / Math.max(resource?.height ?? 1, 1) >= 2.2;
   const markWide = (el) => {
     if (isWide && el) el.__fdeLandscape = true;
     return el;
@@ -420,9 +423,10 @@ export function renderSheet(node, ctx) {
       const wide = (ctx.landscapeContentWidth ?? 0) / 20;
       const pxW = resource?.width || 800;
       const pxH = resource?.height || 400;
-      // 宽表按横向版心算，避免在横向页里只占一半
-      const maxW = pxW / pxH > 1.6 && wide ? wide : contentPt;
-      let widthPt = Math.min(maxW, contentPt * 1.6, wide || contentPt * 1.6);
+      // 只有「特别宽」的表格才值得单独转横向页（宽高比 ≥ 2.2）；
+      // 一页竖一页横在整篇里非常突兀，所以默认关闭，由面板开关控制
+      const wantLandscape = ctx.options?.landscapeWide === true && pxW / pxH >= 2.2 && wide > 0;
+      let widthPt = Math.min(wantLandscape ? wide : contentPt, contentPt * 1.6);
       let heightPt = (widthPt * pxH) / pxW;
       if (heightPt > 620) {
         widthPt *= 620 / heightPt;
@@ -443,12 +447,18 @@ export function renderSheet(node, ctx) {
         alignment: AlignmentType.CENTER,
         style: STYLE.body,
       });
-      // 预览图比竖版版心宽 → 这一节转成横向页，否则会溢出到纸外
-      if (widthPt > contentPt + 1) placeholder.__fdeLandscape = true;
+      if (wantLandscape) placeholder.__fdeLandscape = true;
       return [placeholder];
     }
-    // 选了 Excel 对象但没拿到单元格数据：必须说出来，不能静默退回截图
-    ctx.report.degraded.push('· 内嵌表格未读到单元格数据，已用截图代替（面板里重新选择一次「Excel 对象」可申请权限）');
+    // 选了 Excel 对象但没拿到单元格数据：必须说出来，不能静默退回截图。
+    // 一份文档多张表时只提示一次，否则报告会被同一句话刷屏
+    if (!ctx.__sheetFallbackNoticed) {
+      ctx.__sheetFallbackNoticed = true;
+      ctx.report.degraded.push(
+        '· 内嵌表格未读到单元格数据，已用截图代替。' +
+          '请确认：①扩展已重新加载 ②导出时该标签页没有开 DevTools ③文档未设置「禁止复制」',
+      );
+    }
     if (!resource?.data) ctx.report.degraded.push(t('sheetNoCellData', ctx.lang)());
   }
 

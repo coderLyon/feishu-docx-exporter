@@ -1,12 +1,13 @@
 {
   "manifest_version": 3,
   "name": "飞书文档导出 Word",
-  "version": "0.9.2",
+  "version": "0.9.3",
   "description": "把飞书在线文档导出为高保真 Word(.docx)：完整还原排版、内嵌表格全量导出、默认去除水印。",
   "permissions": [
     "downloads",
     "activeTab",
-    "clipboardRead"
+    "clipboardRead",
+    "debugger"
   ],
   "host_permissions": [
     "https://*.feishu.cn/*",
@@ -37,8 +38,5 @@
       },
       "description": "显示/隐藏导出面板"
     }
-  },
-  "optional_permissions": [
-    "debugger"
-  ]
+  }
 }

@@ -39,9 +39,13 @@ function imageParagraph(resource, ctx, caption, { allowLandscape = false } = {})
   if (!resource?.data) return [];
 
   // 在表格单元格里按列宽缩放（再留一点单元格内边距），否则会撑破表格
-  const available = ctx.cellWidthPx
-    ? Math.max(60, Math.min(ctx.contentWidthPx, ctx.cellWidthPx - 12))
+  // 宽表进横页后要按**横向版心**缩放，否则只占纸面一半（实测横页里表格只有 70% 宽）
+  const contentWidthPx = isWide && ctx.landscapeContentWidth
+    ? Math.round(ctx.landscapeContentWidth / 15)
     : ctx.contentWidthPx;
+  const available = ctx.cellWidthPx
+    ? Math.max(60, Math.min(contentWidthPx, ctx.cellWidthPx - 12))
+    : contentWidthPx;
   const { width, height } = fitImage(resource.width, resource.height, available);
   const run = new ImageRun({
     type: resource.mimeType?.includes('jpeg') ? 'jpg' : 'png',

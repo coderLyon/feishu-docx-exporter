@@ -535,6 +535,51 @@ A4 竖版版心 674px、11 列平均每列 61px，`Windows`/`Android`/`通过` �
 
 **流程规矩（已写入项目记忆）**：每次 `0.x` 版本发布前必须做一轮文件 / 源码 / 文档整理。
 
+
+## v0.9.0（2026-10-18）：内嵌表格导出为真 Excel 对象 + 全模式横页 + 采集提速
+
+### 修阻断：导出变 zip
+`injectOleObjects` 用 JSZip 重打包时没传 MIME，JSZip 默认 `application/zip`，
+Chrome 按 Blob 的 MIME 覆盖扩展名 → 含附件的文档落盘成 `.zip`。
+修法：①`generateAsync` 显式传 docx MIME ②下载前再包一层 `new Blob([blob], {type: DOCX_MIME})`
+③`e2e` 加 MIME/后缀断言（此前 shim 直接按 filename 落盘，这类问题查不出来）。
+
+### 新增：内嵌表格 → Word 里的真 Excel 对象
+选中「导出为 Excel 对象」后，文档里是一个 `ProgID="Excel.Sheet.12"` 的嵌入对象：
+显示整表预览图，双击进入 Excel 编辑，数值/底色/字号/合并都在。
+
+实现：
+- `src/core/sheet/grid.js`：从剪贴板 HTML 抽网格模型（列宽/底色/字色/字号/加粗/对齐/合并），
+  `parseStyleDecl` 改为按 `;` 切分（旧正则 `[^-]color:` 会把 `border-color` 当成字色）
+- `src/core/ole/xlsx.js`：手写最小 SheetML（6 个部件、inlineStr 省 sharedStrings、样式池化），
+  数字格式：`¥#,##0.00;[Red](¥#,##0.00)` / `0.00%` / `yyyy/m/d` / `yyyy/m/d h:mm`
+- `src/core/ole/inject.js`：新增 `package` 关系分支（官方同款，不是 Ole10Native）
+- 预览图用已采集的整表截图，按真实宽高比摆放（官方固定 414×220 会拉伸）
+
+**踩坑**：日期序列值一开始差 8 小时 —— `Date.UTC` 与 `getTime()` 混用会引入时区差，
+两端都按本地墙钟换算才对（2026/09/21 应为 46286）。
+
+### 修：横页只给宽表格
+第一版无条件按宽度判定，把 845 块文档切成 11 节 / 5 个横向页。
+现在只有「表格截图」允许横页，普通插图即便很宽也不切。
+
+### 优化：采集从三趟降为两趟
+- `settleViewport`：块数稳定即继续，替代写死 400/450ms（重型块仍保留 800ms 上限）
+- 第一趟半步长兼作预热，第二趟大步长快速补漏；`fastCapture` 可关回旧三步走
+- 进度条单调（两趟都映射 20→38% 会回跳，像卡住重来）
+- 845 块文档实测 **76s → 55s**，资源数不变（图 3 / 表 4 / 画板 3）
+
+### 工具
+- `tools/visual-audit.mjs`：多模式导出 → PDF → 逐页 PNG → `report.md`
+- `tools/check-xlsx.mjs` / `check-xlsx.ps1`：xlsx 结构与 Excel 侧断言
+- `tools/probe-sheet-export.mjs` 等三个探针：导出接口调研（结论见 ARCHITECTURE 5.4）
+
+### 调研结论：飞书导出接口暂不可用
+- `POST /space/api/export/create/`：内嵌表 token 返回 `code:1 Failed`；文档 token 返回 `1004 invalid param`（试过 21 个 type 值）
+- `GET /space/api/parser/export`：502
+- 因此改为「剪贴板 HTML 自建 xlsx」。代价：数字格式靠 `data-formatter` + 显示文本反推，
+  隐藏精度与公式无法还原（显示值本身完整）。
+
 ## 已知遗留
 
 1. 内嵌电子表格原生化（接口与解码路径已存档，卡在私有二进制格式）

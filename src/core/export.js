@@ -76,7 +76,6 @@ export async function exportToDocx({ url, options, resources, onProgress }) {
   // 只取不超过 20MB 的，超大的仍以链接呈现，避免导出卡死。
   if (options.embedAttachments) {
     const fileNodes = [...byId.values()].filter((n) => n.type === 'file' && n.data?.file?.token);
-    if (!fileNodes.length) report.degraded.push('· 附件：文档里未识别到 file 块');
     const MAX = 20 * 1024 * 1024;
     let done = 0;
     for (const node of fileNodes) {

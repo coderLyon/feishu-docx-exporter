@@ -489,6 +489,32 @@ A4 竖版版心 674px、11 列平均每列 61px，`Windows`/`Android`/`通过` �
 - 绿色表头、蓝色列、模块列纵向合并、图标字形全部保留
 - 主文档（6 列）不受影响：仍 1 节、无横向、24 表、断言 16/16
 
+
+## v0.7.0（2026-10-18）：附件以文件图标嵌入，双击直接打开
+
+**目标②达成**。附件不再是超链接，而是真正的 OLE 文件对象：显示文件图标，
+双击用关联程序打开（原来是跳浏览器）。
+
+**实现**（`src/core/ole/`）：
+1. `build.js` —— 按逆向出的布局生成 `oleObject.bin`（CFB + Ole10Native）
+2. `inject.js` —— 打包后用 JSZip 注入：embeddings、图标、rels、ContentTypes，
+   并把正文占位段替换成 `<w:object>`
+3. `export.js` —— 渲染前用 `/space/api/box/stream/download/all/<token>` 取附件字节
+   （≤ 20MB，超限或失败自动回退成链接）
+
+**踩坑**：
+- `cfb` 依赖 Node 的 `Buffer`，浏览器报 `Buffer is not defined` → 加 polyfill
+- 附件字节必须在**渲染之前**取，否则 `renderFile` 早已输出链接（第一版就是这个错）
+- 根 CLSID / UTF-16 路径段 / tempPath 拼接 / VML 完整性，缺一个激活就失败
+
+**验证**：
+- 扩展产物结构逐字段核对（CLSID、三流、dataSize 96088 与附件字节一致、数据以 `<!DOCTYPE html>` 开头）
+- 同一 builder 的小文档经 Word COM `Activate()` **无异常**（与用户原始文档一致）
+- 843 块的完整文档 Word 可正常打开并转 PDF（5MB）
+
+**限制**：图标统一用内置 32×32 PNG（不做按文件类型的图标）；
+超过 20MB 的附件仍以链接呈现。
+
 ## 已知遗留
 
 1. 内嵌电子表格原生化（接口与解码路径已存档，卡在私有二进制格式）

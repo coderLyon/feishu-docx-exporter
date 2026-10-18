@@ -4,6 +4,7 @@ import { t } from '../shared/messages.js';
 import { buildBlockTree } from './tree.js';
 import { createRenderContext, renderNode } from './render/index.js';
 import { buildDocx } from './docx/build.js';
+import { injectOleObjects } from './ole/inject.js';
 import { FONT_SCHEMES, PAGE_MARGINS, PAGE_SIZES, TYPO } from '../shared/constants.js';
 
 /**
@@ -48,10 +49,14 @@ export async function exportToDocx({ url, options, resources, onProgress }) {
   const landscapeContentWidth = size.height - margin.left - margin.right;
   const font = FONT_SCHEMES[options.fontScheme] ?? FONT_SCHEMES.yahei;
 
+  // 附件字节容器（稍后填充；Map 引用传给 ctx，填充即可见）
+  const attachments = new Map();
+
   const ctx = createRenderContext({
     byId,
     // 表格单元格块不在 blockSequence 里（只存于 blockMap），列宽估算需要它兜底
     blockMap: doc.blockMap ?? {},
+    attachments,
     options,
     resources,
     host: location.hostname,
@@ -64,6 +69,32 @@ export async function exportToDocx({ url, options, resources, onProgress }) {
     // 抽样正文用于判断文档语言（决定占位/降级文案用中文还是英文）
     textSample: sampleDocText(doc),
   });
+
+  // 附件字节：用于把附件做成 OLE 文件对象（双击直接打开）。
+  // 只取不超过 20MB 的，超大的仍以链接呈现，避免导出卡死。
+  if (options.embedAttachments) {
+    const fileNodes = [...byId.values()].filter((n) => n.type === 'file' && n.data?.file?.token);
+    if (!fileNodes.length) report.degraded.push('· 附件：文档里未识别到 file 块');
+    const MAX = 20 * 1024 * 1024;
+    let done = 0;
+    for (const node of fileNodes) {
+      const f = node.data.file;
+      if ((f.size ?? 0) > MAX) continue;
+      try {
+        const res = await fetch(`/space/api/box/stream/download/all/${f.token}`, { credentials: 'include' });
+        if (!res.ok) report.degraded.push(`· 附件 ${f.name} 下载返回 ${res.status}`);
+        if (res.ok) {
+          const buf = await res.arrayBuffer();
+          if (buf.byteLength && buf.byteLength <= MAX) attachments.set(f.token, { bytes: new Uint8Array(buf) });
+        else report.degraded.push(`· 附件 ${f.name} 字节为空或过大（${buf.byteLength}）`);
+        }
+      } catch (err) {
+        report.degraded.push(`· 附件 ${f.name} 取字节失败：${err?.message ?? err}`);
+      }
+      done += 1;
+      onProgress?.({ stage: 'capture', percent: 60 + Math.round((done / fileNodes.length) * 15), detail: `正在获取附件 ${done}/${fileNodes.length}` });
+    }
+  }
 
   const children = root ? renderNode(root, ctx, 0) : [];
 
@@ -96,9 +127,19 @@ export async function exportToDocx({ url, options, resources, onProgress }) {
     orderedInstances: ctx.ordered.instance + 1,
   });
 
+  let finalBlob = blob;
+  if (ctx.oleObjects?.length) {
+    onProgress?.({ stage: 'pack', percent: 95, detail: `正在嵌入附件（${ctx.oleObjects.length} 个）` });
+    try {
+      finalBlob = await injectOleObjects(blob, ctx.oleObjects);
+    } catch (err) {
+      report.degraded.push(`· 附件嵌入失败：${err?.message ?? err}`);
+    }
+  }
+
   onProgress?.({ stage: 'done', percent: 100 });
   return {
-    blob,
+    blob: finalBlob,
     title: node.title || '未命名文档',
     report,
     stats: {

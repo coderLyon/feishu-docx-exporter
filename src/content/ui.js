@@ -133,6 +133,10 @@ export class ExportPanel {
           <label class="fde-label">字体</label>
           <select class="fde-select" data-act="select" data-key="fontScheme">${fontOptions}</select>
         </div>
+        <div class="fde-switch">
+          <span>附件嵌入为文件对象</span>
+          <button class="fde-toggle ${o.embedAttachments ? 'fde-on' : ''}" data-act="toggle" data-key="embedAttachments"></button>
+        </div>
         <div class="fde-group">
           <label class="fde-label">内嵌表格</label>
           <select class="fde-select" data-act="select" data-key="embeddedSheet">

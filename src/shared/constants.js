@@ -111,6 +111,8 @@ export const DEFAULT_OPTIONS = {
   // 内嵌电子表格：默认导出为图片（版式忠实、零风险）；
   // 选 'table' 则导出为可编辑的 Word 原生表格（需要先用 extract-sheets 取到单元格数据）
   embeddedSheet: 'image',
+  // 附件以 OLE 文件对象嵌入（双击可用关联程序打开），默认关闭
+  embedAttachments: true,
   pageSize: 'A4',
   pageMargin: 'normal',
   fontScheme: 'yahei',

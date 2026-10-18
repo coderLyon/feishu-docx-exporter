@@ -82,6 +82,17 @@ export function renderFile(node, ctx) {
   const name = sanitizeXmlText(file.name ?? '附件');
   const sizeKb = file.size ? ` (${Math.round(file.size / 1024)} KB)` : '';
   const url = file.token ? `https://${ctx.host}/space/api/box/stream/download/all/${file.token}` : '';
+
+  // 取到附件字节 → 输出占位段，打包后由 ole/inject.js 换成真正的 OLE 文件对象。
+  // 双击即可用关联程序打开，而不是跳转浏览器链接。
+  const attachment = ctx.attachments?.get?.(file.token);
+  if (ctx.options?.embedAttachments && attachment?.bytes?.length) {
+    const index = (ctx.oleSeq = (ctx.oleSeq ?? 0) + 1);
+    ctx.oleObjects = ctx.oleObjects ?? [];
+    ctx.oleObjects.push({ index, name, bytes: attachment.bytes });
+    return [new Paragraph({ children: [new TextRun({ text: `\u0001FDE_OLE_${index}\u0001` })], style: STYLE.body })];
+  }
+
   ctx.report.degraded.push(t('fileAsLink', ctx.lang)(name));
 
   return [

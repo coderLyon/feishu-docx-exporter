@@ -43,6 +43,9 @@ export async function exportToDocx({ url, options, resources, onProgress }) {
   const size = PAGE_SIZES[options.pageSize] ?? PAGE_SIZES.A4;
   const margin = PAGE_MARGINS[options.pageMargin] ?? PAGE_MARGINS.normal;
   const pageContentWidth = size.width - margin.left - margin.right;
+  // 横向页的版心宽度：长边（A4 的 height）减去左右边距。
+  // 宽表会进横向节，列宽要按这个宽度算，否则横向页里表格只占一半。
+  const landscapeContentWidth = size.height - margin.left - margin.right;
   const font = FONT_SCHEMES[options.fontScheme] ?? FONT_SCHEMES.yahei;
 
   const ctx = createRenderContext({
@@ -55,6 +58,7 @@ export async function exportToDocx({ url, options, resources, onProgress }) {
     objToken: node.objToken,
     report,
     pageContentWidth,
+    landscapeContentWidth,
     bodySize: TYPO.body.size,
     bodyFont: { ascii: font.ascii, eastAsia: font.eastAsia, hAnsi: font.ascii },
     // 抽样正文用于判断文档语言（决定占位/降级文案用中文还是英文）

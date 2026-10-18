@@ -168,7 +168,12 @@ function buildSheetFromHtml(html, ctx) {
   );
   if (!colCount || colCount > 40) return null;
 
-  const availableTw = ctx.pageContentWidth ?? 10106;
+  // 列数多（≥7）的表格在竖版里每列只有 50~60px，必然折行 —— 放进横向节。
+  // 横向页版心 = 长边 - 左右边距，比竖版宽 40% 左右。
+  const wide = colCount >= 7;
+  const availableTw = wide
+    ? (ctx.landscapeContentWidth ?? ctx.pageContentWidth ?? 10106)
+    : (ctx.pageContentWidth ?? 10106);
   let widthsPx = colEls.map((c) => Number(c.getAttribute('width')) || 0).filter((w) => w > 0);
   if (widthsPx.length !== colCount) {
     widthsPx = Array.from({ length: colCount }, () => Math.round(availableTw / colCount / PX_TO_TWIP));
@@ -291,6 +296,10 @@ function buildSheetFromHtml(html, ctx) {
       insideVertical: border,
     },
   });
+  if (wide) {
+    // 交给 build.js：把这个表格单独放进横向节
+    table.__fdeLandscape = true;
+  }
   return [table, new Paragraph({ children: [], style: STYLE.body })];
 }
 

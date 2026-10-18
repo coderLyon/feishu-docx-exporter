@@ -1,5 +1,5 @@
 /** 导出编排：解析 -> 取数 -> 渲染 -> 打包 */
-import { loadDocument } from './api.js';
+import { fetchBitableClientVars, loadDocument } from './api.js';
 import { t } from '../shared/messages.js';
 import { buildBlockTree } from './tree.js';
 import { createRenderContext, renderNode } from './render/index.js';
@@ -53,12 +53,15 @@ export async function exportToDocx({ url, options, resources, onProgress }) {
 
   // 附件字节容器（稍后填充；Map 引用传给 ctx，填充即可见）
   const attachments = new Map();
+  // 多维表格数据（在渲染前取好：渲染是同步的，接口是异步的）
+  const bitables = new Map();
 
   const ctx = createRenderContext({
     byId,
     // 表格单元格块不在 blockSequence 里（只存于 blockMap），列宽估算需要它兜底
     blockMap: doc.blockMap ?? {},
     attachments,
+    bitables,
     options,
     resources,
     host: location.hostname,
@@ -73,10 +76,11 @@ export async function exportToDocx({ url, options, resources, onProgress }) {
   });
 
   // 附件字节：用于把附件做成 OLE 文件对象（双击直接打开）。
-  // 只取不超过 20MB 的，超大的仍以链接呈现，避免导出卡死。
+  // 上限 200MB：Ole10Native 的 dataSize 是 u32（<4GB 都合法），真正的瓶颈是内存，
+  // 200MB 在 8GB 机器上仍安全（峰值约 2 倍）。超过则回退成链接。
   if (options.embedAttachments) {
     const fileNodes = [...byId.values()].filter((n) => n.type === 'file' && n.data?.file?.token);
-    const MAX = 20 * 1024 * 1024;
+    const MAX = 200 * 1024 * 1024;
     let done = 0;
     for (const node of fileNodes) {
       const f = node.data.file;
@@ -94,6 +98,19 @@ export async function exportToDocx({ url, options, resources, onProgress }) {
       }
       done += 1;
       onProgress?.({ stage: 'capture', percent: 60 + Math.round((done / fileNodes.length) * 15), detail: `正在获取附件 ${done}/${fileNodes.length}` });
+    }
+  }
+
+  // 多维表格：预取视图数据，失败就保持原来的链接卡片
+  if (options.embedBitable !== false) {
+    const nodes = [...byId.values()].filter((n) => n.type === 'bitable' && n.data?.token).slice(0, 5);
+    for (const n of nodes) {
+      try {
+        const data = await fetchBitableClientVars({ token: n.data.token, viewId: n.data.view_id ?? '' });
+        if (data) bitables.set(n.data.token, data);
+      } catch (error) {
+        report.degraded.push(`· 多维表格读取失败：${error?.message ?? error}`);
+      }
     }
   }
 

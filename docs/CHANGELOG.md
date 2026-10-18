@@ -580,6 +580,35 @@ Chrome 按 Blob 的 MIME 覆盖扩展名 → 含附件的文档落盘成 `.zip`�
 - 因此改为「剪贴板 HTML 自建 xlsx」。代价：数字格式靠 `data-formatter` + 显示文本反推，
   隐藏精度与公式无法还原（显示值本身完整）。
 
+
+## v0.9.1（2026-10-18）：多维表格出真表格 + 大附件放开到 200MB
+
+### 多维表格（原来只有一行链接）
+真实接口（抓包确认）：`GET /space/api/v1/bitable/<baseToken>/clientvars?tableID=<tableId>`
+—— 注意**路径里只放 baseToken**，写成 `<base>_<table>` 会返回 `code:3 Not Found`（实测踩过）。
+
+`data.base` / `data.table` 是 `base64(gzip(JSON))`，用 `DecompressionStream('gzip')` 解：
+`viewMap[view].property.fields` 给列顺序、`fieldMap` 给字段名、`groupList[].recordIDList` 给行序、
+`recordMap[rid][fid].value` 给单元格值。
+
+渲染：Word 原生表格（表头灰底 + 跨页重复 + ≥7 列横页 + 最多 5 张表）。
+实测 IIoT 文档：降级项从「多维表格以链接形式保留」变为**零降级**，表格数 28 → 29。
+
+### 大附件：20MB → 200MB
+- `res.blob()` 替代 `arrayBuffer()`（大文件可落磁盘缓存，内存峰值更低）
+- 上限提到 200MB（`Ole10Native.dataSize` 是 u32，真正瓶颈是内存）
+- 超过 4MB 的 OLE 容器用 `STORE`（不再对已压缩内容做 DEFLATE）
+
+### §2.6 扩展内直取表格数据：本轮未打通（已验证的负面结论）
+目标：不跑外部脚本也能拿到单元格 HTML。实测三条路都不通：
+1. 合成 `MouseEvent` / `PointerEvent` 点进表格 + 合成 Ctrl+A/C → **零命中**，飞书 canvas 只认 trusted 输入
+2. hook `DataTransfer.setData` / `clipboard.write` / `execCommand('copy')` → 由于上一步没进编辑态，一个都没触发
+3. `chrome.debugger` 方案（发 trusted 按键）在 CDP 加载的未打包扩展上 **service worker 不响应消息**，
+   未完成端到端验证
+
+结论：暂时保留「外部脚本预提取」（`tools/extract-sheets.mjs`），面板一键导出时若没有数据则回退截图。
+代码已回退到 v0.9.0 的稳定状态，不影响现有功能。
+
 ## 已知遗留
 
 1. 内嵌电子表格原生化（接口与解码路径已存档，卡在私有二进制格式）

@@ -52,7 +52,11 @@ export async function injectOleObjects(blob, attachments) {
 
   for (const att of attachments) {
     const n = att.index;
-    zip.file(`word/embeddings/oleObject${n}.bin`, buildOleBin(att.bytes, att.name));
+    const oleBytes = buildOleBin(att.bytes, att.name);
+    // 大附件用 STORE：本身多是压缩包/二进制，再 DEFLATE 既慢又几乎没收益
+    zip.file(`word/embeddings/oleObject${n}.bin`, oleBytes, {
+      compression: oleBytes.length > 4 * 1024 * 1024 ? 'STORE' : 'DEFLATE',
+    });
     // 按扩展名现画图标（无法生成时退回内置底板）
     let icon = null;
     try {

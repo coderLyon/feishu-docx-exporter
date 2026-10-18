@@ -500,6 +500,54 @@ export function renderWhiteboard(node, ctx) {
 
 /** 多维表格：以链接占位 */
 export function renderBitable(node, ctx) {
+  // 有预取数据就渲染成 Word 原生表格（表头灰底、跨页重复）；没有则退回链接卡片
+  const data = ctx.bitables?.get?.(node.data?.token ?? '');
+  if (data?.headers?.length) {
+    const cols = data.headers.length;
+    const wide = cols >= 7;
+    const availableTw = wide
+      ? (ctx.landscapeContentWidth ?? ctx.pageContentWidth ?? 10106)
+      : (ctx.pageContentWidth ?? 10106);
+    const cell = (text, header) =>
+      new TableCell({
+        children: [
+          new Paragraph({
+            style: STYLE.sheetCell,
+            children: [new TextRun({ text: String(text ?? ''), bold: header })],
+          }),
+        ],
+        shading: header ? { fill: 'F5F6F7' } : undefined,
+        verticalAlign: VerticalAlign.CENTER,
+      });
+    const table = new Table({
+      rows: [
+        new TableRow({
+          tableHeader: true,
+          children: data.headers.map((h) => cell(h, true)),
+        }),
+        ...data.rows.map(
+          (row) =>
+            new TableRow({
+              children: row.map((v) => cell(v, false)),
+            }),
+        ),
+      ],
+      width: { size: availableTw, type: WidthType.DXA },
+      columnWidths: Array.from({ length: cols }, () => Math.floor(availableTw / cols)),
+      layout: TableLayoutType.FIXED,
+      borders: {
+        top: { style: BorderStyle.SINGLE, size: 4, color: 'DEE0E3' },
+        bottom: { style: BorderStyle.SINGLE, size: 4, color: 'DEE0E3' },
+        left: { style: BorderStyle.SINGLE, size: 4, color: 'DEE0E3' },
+        right: { style: BorderStyle.SINGLE, size: 4, color: 'DEE0E3' },
+        insideHorizontal: { style: BorderStyle.SINGLE, size: 4, color: 'DEE0E3' },
+        insideVertical: { style: BorderStyle.SINGLE, size: 4, color: 'DEE0E3' },
+      },
+    });
+    if (wide) table.__fdeLandscape = true;
+    return [table];
+  }
+
   // bitable / base_refer 的 token 形如 <baseToken>_<tableId>，
   // 第一个下划线之前是 base token；有 view_id 时一并带上，点开能落到相同视图
   const raw = node.data?.token ?? '';

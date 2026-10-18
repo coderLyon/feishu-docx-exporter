@@ -263,3 +263,100 @@ export async function loadDocument({ url = location.href, signal, onProgress } =
 
   return { node, pages, doc };
 }
+
+/** gzip + base64 → 解析后的 JSON（多维表格的 base/table 就是这么打包的） */
+async function gunzipBase64ToJson(b64) {
+  if (!b64) return null;
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
+  if (typeof DecompressionStream === 'undefined') return null;
+  const ds = new DecompressionStream('gzip');
+  const stream = new Blob([bytes]).stream().pipeThrough(ds);
+  const text = await new Response(stream).text();
+  return JSON.parse(text);
+}
+
+/**
+ * 多维表格（bitable）数据。
+ *
+ * 接口与字段来自真实抓包（samples/bodies/0050_*.json）：
+ *   GET /space/api/v1/bitable/<baseToken>_<tableId>/clientvars?tableID=...&recordLimit=200...
+ *   data.base / data.table 是 base64(gzip(JSON))：
+ *     viewMap[view].property.fields → 列顺序
+ *     fieldMap[fid]                 → 字段名/类型
+ *     groupList[].recordIDList      → 行顺序
+ *     recordMap[rid][fid].value     → 单元格值
+ */
+export async function fetchBitableClientVars({ token, viewId = '', recordLimit = 200, signal } = {}) {
+  if (!token) return null;
+  const [baseToken, tableId] = String(token).split('_');
+  if (!baseToken || !tableId) return null;
+
+  const qs = new URLSearchParams({
+    tableID: tableId,
+    viewID: viewId ?? '',
+    recordLimit: String(recordLimit),
+    needBase: 'true',
+    openType: '0',
+    viewLazyLoad: 'true',
+    ondemandVer: '2',
+    ondemandLimit: String(recordLimit),
+    noMissCS: 'true',
+    optimizationFlag: '1',
+    removeFmlExtra: 'true',
+  });
+  // 路径里只放 baseToken，tableId 走 query（写成 <base>_<table> 会返回 code=3 Not Found，实测）
+  const json = await requestJson(`/space/api/v1/bitable/${baseToken}/clientvars?${qs}`, { signal });
+  const data = json?.data ?? {};
+
+  const [base, table] = await Promise.all([
+    gunzipBase64ToJson(data.base),
+    gunzipBase64ToJson(data.table),
+  ]);
+  return normalizeBitable(base, table);
+}
+
+/** 把 base/table 两份 JSON 合并成「列 + 行 + 单元格文本」的简单结构 */
+function normalizeBitable(base, table) {
+  if (!base && !table) return null;
+  const fieldMap = { ...(base?.fieldMap ?? table?.fieldMap ?? {}) };
+  const recordMap = { ...(base?.recordMap ?? table?.recordMap ?? {}) };
+
+  // 列顺序：当前视图的字段列表 → 否则用 fieldMap 的键顺序
+  const viewMap = table?.viewMap ?? base?.viewMap ?? {};
+  const viewId = table?.currentViewId ?? base?.currentViewId ?? Object.keys(viewMap)[0];
+  const viewFields = viewMap?.[viewId]?.property?.fields;
+  let fids = Array.isArray(viewFields) && viewFields.length
+    ? viewFields.map((f) => (typeof f === 'string' ? f : f?.id)).filter(Boolean)
+    : Object.keys(fieldMap);
+
+  // 行顺序
+  let rids = [];
+  const groups = table?.groupList ?? base?.groupList;
+  if (Array.isArray(groups) && groups.length) {
+    for (const g of groups) rids.push(...(g?.recordIDList ?? []));
+  }
+  if (!rids.length) rids = Object.keys(recordMap);
+
+  // 单元格取值：value 可能是数组/对象/字符串，统一转成显示文本
+  const toText = (v) => {
+    if (v == null) return '';
+    if (typeof v === 'string') return v;
+    if (Array.isArray(v)) return v.map(toText).filter(Boolean).join(', ');
+    if (typeof v === 'object') {
+      if (typeof v.text === 'string') return v.text;
+      if (typeof v.value === 'string') return v.value;
+      if (typeof v.name === 'string') return v.name;
+      if (Array.isArray(v.value)) return toText(v.value);
+      return '';
+    }
+    return String(v);
+  };
+
+  const headers = fids.map((fid) => String(fieldMap[fid]?.name ?? fid));
+  const rows = rids.map((rid) => fids.map((fid) => toText(recordMap[rid]?.[fid]?.value)));
+
+  if (!headers.length) return null;
+  return { headers, rows, fieldTypes: fids.map((fid) => fieldMap[fid]?.type ?? null) };
+}

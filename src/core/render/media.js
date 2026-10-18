@@ -104,7 +104,7 @@ export function renderFile(node, ctx) {
   if (ctx.options?.embedAttachments && attachment?.bytes?.length) {
     const index = (ctx.oleSeq = (ctx.oleSeq ?? 0) + 1);
     ctx.oleObjects = ctx.oleObjects ?? [];
-    ctx.oleObjects.push({ index, name, bytes: attachment.bytes });
+    ctx.oleObjects.push({ index, name, bytes: attachment.bytes, size: file.size ?? 0 });
     return [new Paragraph({ children: [new TextRun({ text: `\u0001FDE_OLE_${index}\u0001` })], style: STYLE.body })];
   }
 

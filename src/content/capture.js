@@ -668,27 +668,33 @@ async function scanPass(scroller, state, onProgress, opts = {}) {
     onProgress?.({ stage: 'scroll', loaded: Math.min(y, total), total });
     const scrollBase = scroller.scrollTop;
 
-    // 图片
-    for (const img of document.querySelectorAll('.image-block-container img')) {
-      // 图片是异步加载的：刚滚到视口时 naturalWidth 还是 0，
-      // 直接跳过就会漏采（实测某文档 2 张图全丢）。这里给它一点时间加载完再判断。
-      if (!img.complete || img.naturalWidth < 4) {
-        await waitForImage(img, 1800);
-      }
+    // 图片：先并发等加载完，再并发取字节。
+    // 串行时一张图最长要等 1.8s，一屏 3 张就是 5s+；这里整体只花最慢那张的时间。
+    const imgEls = [...document.querySelectorAll('.image-block-container img')];
+    await Promise.all(
+      imgEls.map((img) => (img.complete && img.naturalWidth >= 4 ? null : waitForImage(img, 1800))),
+    );
+    const pending = [];
+    for (const img of imgEls) {
       const src = img.currentSrc || img.src;
       if (!src || state.seenImages.has(src) || img.naturalWidth < 4) continue;
       state.seenImages.add(src);
-      try {
-        const resource = await fetchImageBytes(img);
-        if (resource) {
-          state.images.push({
-            ...resource,
-            docY: Math.round(img.getBoundingClientRect().top + scrollBase),
-          });
-        }
-      } catch {
-        /* 单张失败不影响整体 */
-      }
+      pending.push({ img, src, docY: Math.round(img.getBoundingClientRect().top + scrollBase) });
+    }
+    // 取字节按 4 路并发：网络/解码都在浏览器内部并行，串行没有任何收益
+    const CONCURRENCY = 4;
+    for (let i = 0; i < pending.length; i += CONCURRENCY) {
+      const batch = pending.slice(i, i + CONCURRENCY);
+      await Promise.all(
+        batch.map(async ({ img, docY }) => {
+          try {
+            const resource = await fetchImageBytes(img);
+            if (resource) state.images.push({ ...resource, docY });
+          } catch {
+            /* 单张失败不影响整体 */
+          }
+        }),
+      );
     }
 
     // 画板 / 内嵌电子表格（canvas 渲染）

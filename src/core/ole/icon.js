@@ -85,3 +85,75 @@ export async function makeIconPng(fileName) {
   if (!blob) throw new Error('图标生成失败');
   return new Uint8Array(await blob.arrayBuffer());
 }
+
+
+/**
+ * 附件「卡片」预览图：长方形 + 类型徽标 + 文件名 + 大小。
+ *
+ * 为什么不用 Word 默认的 48×48 图标：飞书在线就是一个长条卡片，
+ * 用户一眼能看出「这是什么文件、能不能打开」。OLE 对象双击仍然可用，
+ * 这张图只是它的显示面。
+ *
+ * @param {string} fileName
+ * @param {number} [sizeBytes]
+ * @returns {Promise<{bytes: Uint8Array, widthPt: number, heightPt: number}>}
+ */
+export async function makeFileCardPng(fileName, sizeBytes = 0) {
+  const ext = String(fileName ?? '').split('.').pop()?.toLowerCase() ?? '';
+  const color = TYPE_COLORS[ext] ?? TYPE_COLORS.default;
+  const label = (ext || 'FILE').slice(0, 4).toUpperCase();
+
+  // 2 倍图，落到 Word 里按 360×56pt 显示，保证清晰
+  const W = 720;
+  const H = 112;
+  const canvas = document.createElement('canvas');
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext('2d');
+
+  // 底板
+  ctx.clearRect(0, 0, W, H);
+  roundRect(ctx, 1, 1, W - 2, H - 2, 16);
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fill();
+  ctx.strokeStyle = '#DEE0E3';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // 类型徽标
+  const bx = 24;
+  const by = 24;
+  const bs = 64;
+  roundRect(ctx, bx, by, bs, bs, 12);
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.fillStyle = '#FFFFFF';
+  ctx.font = 'bold 20px "Segoe UI", "Microsoft YaHei", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, bx + bs / 2, by + bs / 2 + 1);
+
+  // 文件名（超出宽度截断加省略号）
+  const name = String(fileName ?? '附件');
+  const maxW = W - (bx + bs + 24) - 24;
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#1F2329';
+  ctx.font = '600 22px "Segoe UI", "Microsoft YaHei", sans-serif';
+  let shown = name;
+  while (ctx.measureText(shown).width > maxW && shown.length > 4) {
+    shown = shown.slice(0, -2);
+  }
+  if (shown !== name) shown = `${shown.slice(0, -1)}…`;
+  ctx.fillText(shown, bx + bs + 24, 44);
+
+  // 副标题：大小 + 操作提示
+  const kb = Number(sizeBytes) / 1024;
+  const sizeLabel = kb >= 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(kb))} KB`;
+  ctx.fillStyle = '#8F959E';
+  ctx.font = '400 16px "Segoe UI", "Microsoft YaHei", sans-serif';
+  ctx.fillText(`${sizeLabel} · 双击打开`, bx + bs + 24, 76);
+
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+  if (!blob) throw new Error('附件卡片生成失败');
+  return { bytes: new Uint8Array(await blob.arrayBuffer()), widthPt: 360, heightPt: 56 };
+}

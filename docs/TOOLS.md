@@ -45,7 +45,7 @@
 | `tools/ext-load.mjs` | 通过 CDP `Extensions.loadUnpacked` 装载扩展（Chrome 137+ 已禁用 `--load-extension`） |
 
 
-## 四·五、多文档体检（通用性验证）
+## 四、多文档体检
 
 | 脚本 | 用法 | 说明 |
 | --- | --- | --- |
@@ -56,7 +56,7 @@
 > 1 个采集缺陷（重型块漏采）、3 处断言特化。
 
 
-## 四·六、与官方产物对比（2026-10 新增）
+## 五、与官方产物对比
 
 | 脚本 | 用法 | 说明 |
 | --- | --- | --- |
@@ -68,12 +68,12 @@
 | `tools/probe-quote.mjs` | `node tools/probe-quote.mjs` | 读取在线引用块的计算样式（竖线颜色/宽度/内边距），用于 1:1 复刻 |
 | `tools/probe-scroll-cost.mjs` | `node tools/probe-scroll-cost.mjs` | 隔离实验：只滚动不采集，判断卡顿来自飞书渲染还是我们的采集代码 |
 
-## 四·七、诊断脚本（按需使用，不参与正式验证）
+## 六、诊断脚本（按需使用，不参与正式验证）
 
 `probe.mjs`、`probe-page.mjs`、`probe-sheet.mjs`、`probe-wb.mjs`、`probe-font.mjs`、`probe-style.mjs`、
 `probe-embed.mjs`、`inspect.mjs`、`shot-state.mjs`（截当前视口）、`diag-resources.mjs`、`analyze-blocks.mjs`、`proto-dump.mjs`。
 
-## 四、探测 / 研究 / 诊断（日常迭代不需要）
+## 七、探测与研究
 
 | 脚本 | 用途 |
 | --- | --- |
@@ -86,7 +86,7 @@
 | `tools/e2e-export.mjs` / `e2e-real.mjs` | 早期端到端试验（注入式 / 真实加载） |
 | `tools/fetch-doc.mjs` / `screenshot-doc.mjs` | 抓样本数据与整页截图 |
 
-## 五、重要约定（踩过坑）
+## 八、重要约定
 
 1. **导出前绝不能 `Page.reload`**：刷新会清掉页面懒渲染状态，导致画板/内嵌表格/图片全部采不到（r016 因此全灭）。面板若停在上一次的「导出完成」结果态，再发两次 `fde-toggle` 事件即可回到菜单视图。
 2. **装载扩展的顺序**：必须先 `Extensions.loadUnpacked`，再 `Page.reload`，content script 才会注入（顺序颠倒永不注入）。

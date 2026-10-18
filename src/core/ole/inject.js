@@ -10,7 +10,7 @@
  */
 import JSZip from 'jszip';
 import { buildOleBin } from './build.js';
-import { makeIconPng } from './icon.js';
+import { makeFileCardPng, makeIconPng } from './icon.js';
 
 /** 占位标记：渲染阶段写这段文字，后处理时整段替换成 OLE 对象 */
 export const OLE_MARKER = '\u0001FDE_OLE_';
@@ -22,13 +22,13 @@ export const SHEET_MARKER = '\u0001FDE_XLSX_';
 export const DOCX_MIME =
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
-function oleObjectXml(shapeId, oleRelId, imgRelId, sizePt = 48) {
-  return `<w:r><w:object w:dxaOrig="${sizePt * 20}" w:dyaOrig="${sizePt * 20}">
+function oleObjectXml(shapeId, oleRelId, imgRelId, widthPt = 48, heightPt = 48) {
+  return `<w:r><w:object w:dxaOrig="${Math.round(widthPt * 20)}" w:dyaOrig="${Math.round(heightPt * 20)}">
 <v:shapetype id="_x0000_t75" coordsize="21600,21600" o:spt="75" o:preferrelative="t" path="m@4@5l@4@11@9@11@9@5xe" filled="f" stroked="f">
 <v:stroke joinstyle="miter"/><v:formulas><v:f eqn="if lineDrawn pixelLineWidth 0"/><v:f eqn="sum @0 1 0"/><v:f eqn="sum 0 0 @1"/><v:f eqn="prod @2 1 2"/><v:f eqn="prod @3 21600 pixelWidth"/><v:f eqn="prod @3 21600 pixelHeight"/><v:f eqn="sum @0 0 1"/><v:f eqn="prod @6 1 2"/><v:f eqn="prod @7 21600 pixelWidth"/><v:f eqn="sum @8 21600 0"/><v:f eqn="prod @7 21600 pixelHeight"/><v:f eqn="sum @10 21600 0"/></v:formulas>
 <v:path o:extrusionok="f" gradientshapeok="t" o:connecttype="rect"/><o:lock v:ext="edit" aspectratio="t"/>
 </v:shapetype>
-<v:shape id="${shapeId}" type="#_x0000_t75" style="width:${sizePt}pt;height:${sizePt}pt" o:ole="">
+<v:shape id="${shapeId}" type="#_x0000_t75" style="width:${widthPt.toFixed(1)}pt;height:${heightPt.toFixed(1)}pt" o:ole="">
 <v:imagedata r:id="${imgRelId}" o:title=""/></v:shape>
 <o:OLEObject Type="Embed" ProgID="Package" ShapeID="${shapeId}" DrawAspect="Icon" ObjectID="_fde${shapeId}" r:id="${oleRelId}"/>
 </w:object></w:r>`;
@@ -57,14 +57,20 @@ export async function injectOleObjects(blob, attachments) {
     zip.file(`word/embeddings/oleObject${n}.bin`, oleBytes, {
       compression: oleBytes.length > 4 * 1024 * 1024 ? 'STORE' : 'DEFLATE',
     });
-    // 按扩展名现画图标（无法生成时退回内置底板）
-    let icon = null;
+    // 卡片式预览：长方形 + 类型徽标 + 文件名 + 大小（与飞书在线一致）
+    let card = null;
     try {
-      icon = await makeIconPng(att.name);
+      card = await makeFileCardPng(att.name, att.size ?? 0);
     } catch {
-      icon = new Uint8Array([0]);
+      // 退化：只画类型图标
+      try {
+        const icon = await makeIconPng(att.name);
+        card = { bytes: icon, widthPt: 48, heightPt: 48 };
+      } catch {
+        card = null;
+      }
     }
-    if (icon.length > 1) zip.file(`word/media/fdeole${n}.png`, icon);
+    if (card?.bytes?.length > 1) zip.file(`word/media/fdeole${n}.png`, card.bytes);
 
     const oleRel = `rIdFdeOle${n}`;
     const imgRel = `rIdFdeOleImg${n}`;
@@ -80,11 +86,18 @@ export async function injectOleObjects(blob, attachments) {
     const pStart = Math.max(doc.lastIndexOf('<w:p ', at), doc.lastIndexOf('<w:p>', at));
     const pEnd = doc.indexOf('</w:p>', at) + '</w:p>'.length;
     const para = doc.slice(pStart, pEnd);
-    const pPr = para.match(/<w:pPr>[\s\S]*?<\/w:pPr>/);
+    let pPr = para.match(/<w:pPr>[\s\S]*?<\/w:pPr>/)?.[0] ?? '';
+    // 卡片居中：与飞书在线的附件块一致（原 pPr 里的对齐一律覆盖）
+    pPr = pPr.replace(/<w:jc[^/]*\/>/g, '');
+    const centeredPr = pPr
+      ? pPr.replace('</w:pPr>', '<w:jc w:val="center"/></w:pPr>')
+      : '<w:pPr><w:jc w:val="center"/></w:pPr>';
     const shapeId = `fdeOleShape${n}`;
+    const cardW = card?.widthPt ?? 48;
+    const cardH = card?.heightPt ?? 48;
     doc =
       doc.slice(0, pStart) +
-      `<w:p>${pPr ? pPr[0] : ''}${oleObjectXml(shapeId, oleRel, imgRel)}</w:p>` +
+      `<w:p>${centeredPr}${oleObjectXml(shapeId, oleRel, imgRel, cardW, cardH)}</w:p>` +
       doc.slice(pEnd);
   }
 

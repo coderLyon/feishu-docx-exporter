@@ -1,6 +1,6 @@
 # 架构说明
 
-改代码前请先读本文的「硬约束」一节——里面每一条都是踩过的坑。
+修改代码前请先阅读「硬约束」一节，其中每一条都对应一个已定位的缺陷。
 
 ## 一、数据流
 
@@ -57,8 +57,8 @@ Packer.toBlob() → content script 建 blob URL → service-worker chrome.downlo
 ### 2. 样式体系：段落级样式承载一切
 **每类文本只有一种段落样式，段落与 run 上不写与之冲突的直接格式**（详见 [STYLE-SYSTEM.md](STYLE-SYSTEM.md)）。这样做的好处是用户在 Word 里改一次「标题 1」样式，全文同步生效——已用深度验证证实（改「标题 1」字号 16→26pt，全文 H1 同步变化）。
 
-### 3. 行距用绝对行高还是倍数？
-历史教训：微软雅黑自然行高 ≈ **1.714em**（实测表格 10.5pt 单倍行距渲染出 18pt），因此 `auto` 倍数会乘在这个自然行高上，`1.625 倍`实际渲染成 2.79em。
+### 3. 行距采用绝对行高
+说明：微软雅黑自然行高 ≈ **1.714em**（实测表格 10.5pt 单倍行距渲染出 18pt），因此 `auto` 倍数会乘在这个自然行高上，`1.625 倍`实际渲染成 2.79em。
 现按用户要求统一为**单倍行距**：`{ line: 240, lineRule: LineRuleType.AUTO }`，只写在样式里，段落不带。
 
 ### 4. 标题编号来自数据，不靠猜
@@ -83,7 +83,7 @@ Packer.toBlob() → content script 建 blob URL → service-worker chrome.downlo
 6. **`mergeClientVars` 用 `Object.assign` 合并**，后页覆盖前页；若某页返回被裁剪过的根块，顶层顺序会乱（已加固但仍需留意）。
 7. **service worker 无 `URL.createObjectURL`** → blob URL 由 content script 创建后传后台。
 8. **保存路径要轮询**：download 回调只给 id 且 `conflictAction` 会改名。
-9. **清单坑**：空 `default_popup`、声明 `default_locale` 却缺 `_locales/` 都会加载失败。
+9. **清单文件约束**：空 `default_popup`、声明 `default_locale` 却缺 `_locales/` 都会加载失败。
 10. **隔离世界**：content script 的 `window` 与主世界不可见，DOM 与 DOM 事件才是通道（自动化用 `window.__fdeToggle` 或 `fde-toggle` 事件）。
 11. **离屏画布必须 `willReadFrequently`**；不要读页面画布像素。
 12. **块渲染异常一律捕获降级**进 `report.degraded / errors`，绝不中断整体导出。
@@ -94,9 +94,9 @@ Packer.toBlob() → content script 建 blob URL → service-worker chrome.downlo
 
 16. **引用块是单格表格**（与飞书官方导出一致）：竖线用表格左边框（位置固定），
     官方数值 = 竖线 `BBBFC4`/sz18、正文 `646A73`、内边距 60/120/30/120、段前后 120、行距 288 auto。不要把边框加在 `Quote` 样式上——
-    引用内的列表段落带 `numPr`，编号缩进会覆盖样式缩进，导致边框错位成「两条竖线」（已踩过）。
+    引用内的列表段落带 `numPr`，编号缩进会覆盖样式缩进，导致边框错位成「两条竖线」（已验证）。
 17. **采集必须有三道资源闸**：瓦片数 ≤9、输出画布 ≤8M 像素、采集总预算 4 分钟。
-    缺任何一道，大文档（800+ 块）会因巨型画布/超大 base64 把渲染进程拖死（已踩过）。
+    缺任何一道，大文档（800+ 块）会因巨型画布/超大 base64 把渲染进程拖死（已验证）。
 
 18. **页面必须可见，否则采不到东西**：Chrome 对被遮挡/后台窗口会节流渲染，
     `document.visibilityState` 变成 `hidden` 时飞书虚拟化只渲染个位数的块
@@ -108,9 +108,9 @@ Packer.toBlob() → content script 建 blob URL → service-worker chrome.downlo
     表头 `tableHeader`（跨页重复）。缺 keepNext 会出现「标题孤悬页底」，长文档里最伤连贯性。
 
 
-### 5.1 内嵌电子表格数据接口（2026-10-17 有新进展，结论已改写）
+### 5.1 内嵌电子表格数据接口
 
-**旧结论「飞书没有单元格数据接口」已不准确**。实测发现：
+早期结论「飞书无单元格数据接口」并不准确。验证结果表明：
 
 1. 文档渲染内嵌表格时，页面会请求 `POST /space/api/v3/sheet/client_vars`，
    返回的 `snapshot` 含 `gzipBlockMeta` / `blocks` / `gzipTopSnapshot` / `gzipResource`。
@@ -190,7 +190,7 @@ f1.f2.f12                       ← 工作表数据
 再 `Activate()` 无异常。注意：**结构错了 Word 也能打开文档、不报损坏**，
 只有 Activate 会失败，所以必须做激活验证。
 
-**四个致命坑**：根 CLSID 为 0 / 漏 UTF-16 路径段 / tempPath 没切掉原文件名 /
+**四项关键约束**：根 CLSID 为 0 / 漏 UTF-16 路径段 / tempPath 没切掉原文件名 /
 VML 用简化 shapetype。
 
 **工具**：`tools/build-ole.mjs`（复刻 Ole10Native）、`tools/inject-ole.mjs`（注入 docx）、

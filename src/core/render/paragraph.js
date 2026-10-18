@@ -17,7 +17,8 @@ import {
 import { parseAttributedText } from '../text.js';
 import { runsToDocxChildren } from '../docx/runs.js';
 import { QUOTE_INK, STYLE } from '../docx/styles.js';
-import { BULLET_REFERENCE } from '../docx/numbering.js';
+import { BULLET_REFERENCE, HEADING_REFERENCE } from '../docx/numbering.js';
+import { highlightLine, isDarkBackground, safeBackground } from '../docx/highlight.js';
 import { toHexColor } from '../../shared/util.js';
 
 const ALIGN = {
@@ -80,16 +81,31 @@ export function renderTextLike(node, ctx) {
   if (node.type.startsWith('heading')) {
     const level = Math.min(9, Math.max(1, Number(node.type.slice(7)) || 1));
     const text = runs.map((run) => run.text).join('');
-    const prefix = headingPrefix(node, ctx, level, text);
-    // 编号 run 不写 size / color / font：继承 Heading 样式 => 三号黑色加粗，
-    // 与标题文字自动同字号同色（r005 需求 2 + 需求 3）
-    const headingChildren = prefix ? [new TextRun({ text: prefix, bold: true }), ...children] : children;
+    // 计数器照旧维护：别处（如报告摘要）可能读它
+    headingPrefix(node, ctx, level, text);
+
+    // 编号交给 Word 的 numbering：插入/删除标题后编号自动重排。
+    //
+    // 关键点：飞书里大量标题的编号是**作者手打在文本里**的（"5. 子表更新"、"6.2 状态流转"），
+    // 只给 seq==='auto' 挂编号会让大部分标题没有编号。所以这里统一处理：
+    //   1) 附件/附录类标题保留原样、不编号
+    //   2) 其余标题剥掉手打的数字前缀，改由 Word 编号
+    // 这样插入/删除标题时编号会自动重排 —— 手打编号做不到这一点。
+    const isAttachment = /^\s*(附件|附录)/.test(text);
+    let headingChildren = children;
+    if (!isAttachment && NUMERIC_PREFIX.test(text)) {
+      const stripped = runs.map((run, i) =>
+        i === 0 ? { ...run, text: String(run.text ?? '').replace(NUMERIC_PREFIX, '') } : run,
+      );
+      headingChildren = runsToDocxChildren(stripped);
+    }
 
     return [
       new Paragraph({
         children: headingChildren,
         style: STYLE.heading(level),
         alignment: alignOf(node.data),
+        ...(isAttachment ? {} : { numbering: { reference: HEADING_REFERENCE, level: level - 1 } }),
       }),
       ...ctx.renderChildren(node.children, 0),
     ];
@@ -235,7 +251,8 @@ export function renderQuoteContainer(node, ctx, level = 0) {
 
 /** 高亮块（callout）：用单单元格表格模拟带底色的容器 */
 export function renderCallout(node, ctx, level = 0) {
-  const fill = toHexColor(node.data?.background_color) ?? 'F5F6F7';
+  // 作者可能选了深色背景；照搬会让正文变成「深底深字」，打印一片黑 —— 统一提亮
+  const fill = safeBackground(toHexColor(node.data?.background_color) ?? 'F5F6F7');
   const inner = ctx.renderChildren(node.children, level);
   const emoji = node.data?.emoji_value ? String(node.data.emoji_value) : '';
 
@@ -279,14 +296,22 @@ export function renderCode(node, ctx) {
   const caption = captionRuns.map((run) => run.text).join('').trim();
 
   const lines = text.replace(/\n$/, '').split('\n');
+  const language = node.data?.language ?? '';
+  const background = 'F5F6F7';
 
-  const paragraphs = lines.map(
-    (line) =>
-      new Paragraph({
-        children: [new TextRun({ text: line })],
-        style: STYLE.code,
-      }),
-  );
+  // 逐行着色：飞书块数据里没有 token 颜色，按语言做规则着色（字符串/注释/关键字/数字），
+  // 目标是分段可辨，不追求还原在线主题
+  const paragraphs = lines.map((line) => {
+    const runs = highlightLine(line, language, background).map(
+      (seg) =>
+        new TextRun({
+          text: seg.text,
+          // 深色底必须配浅色字，否则打印出来是一团黑
+          color: isDarkBackground(background) || seg.color !== '24292E' ? seg.color : undefined,
+        }),
+    );
+    return new Paragraph({ children: runs.length ? runs : [new TextRun({ text: '' })], style: STYLE.code });
+  });
 
   const result = [
     new Table({

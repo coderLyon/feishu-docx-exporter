@@ -4,7 +4,6 @@ import { collectResources } from './capture.js';
 import { buildFilename, exportToDocx } from '../core/export.js';
 import { DOCX_MIME } from '../core/ole/inject.js';
 import { ExportPanel } from './ui.js';
-import { hasDebuggerPermission } from './sheet-live.js';
 
 const MOUNT_ID = 'fde-export-mount';
 
@@ -56,17 +55,9 @@ async function runExport(currentPanel, options) {
     // 选「Excel 对象」时需要单元格数据。注意：**不能在这里申请调试权限** ——
     // 浏览器权限弹窗会抢走焦点，飞书随即节流渲染，整篇采集会变成空文档（实测）。
     // 权限由用户在面板里主动开启，这里只查是否已有。
-    let extractSheets = false;
-    if (options.embeddedSheet === 'excel') {
-      try {
-        extractSheets = await hasDebuggerPermission();
-      } catch {
-        extractSheets = false;
-      }
-      if (!extractSheets) {
-        currentPanel.setProgress({ stage: 'collect', percent: 3, detail: '未开启表格读取权限，将用截图代替' });
-      }
-    }
+    // 不再用 chrome.permissions.contains 做门禁 —— 实测它会误报 false（扩展明明是必装权限），
+    // 导致整条提取链路被静默跳过。直接尝试，失败由后台返回具体原因。
+    const extractSheets = options.embeddedSheet === 'excel';
 
     const resources = await collectResources({
       extractSheets,

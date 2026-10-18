@@ -78,28 +78,46 @@ export async function exportToDocx({ url, options, resources, onProgress }) {
   // 附件字节：用于把附件做成 OLE 文件对象（双击直接打开）。
   // 上限 200MB：Ole10Native 的 dataSize 是 u32（<4GB 都合法），真正的瓶颈是内存，
   // 200MB 在 8GB 机器上仍安全（峰值约 2 倍）。超过则回退成链接。
+  // 附件字节：用于把附件做成 OLE 文件对象（双击直接打开）。
+  // 上限 200MB：Ole10Native 的 dataSize 是 u32（<4GB 都合法），真正的瓶颈是内存。
+  // 取字节用 blob() 而不是 arrayBuffer()：大文件可落磁盘缓存，内存峰值更低。
   if (options.embedAttachments) {
     const fileNodes = [...byId.values()].filter((n) => n.type === 'file' && n.data?.file?.token);
     const MAX = 200 * 1024 * 1024;
+    const todo = fileNodes.filter((n) => (n.data.file.size ?? 0) <= MAX);
     let done = 0;
-    for (const node of fileNodes) {
-      const f = node.data.file;
-      if ((f.size ?? 0) > MAX) continue;
-      try {
-        const res = await fetch(`/space/api/box/stream/download/all/${f.token}`, { credentials: 'include' });
-        if (!res.ok) report.degraded.push(`· 附件 ${f.name} 下载返回 ${res.status}`);
-        if (res.ok) {
-          const buf = await res.arrayBuffer();
-          if (buf.byteLength && buf.byteLength <= MAX) attachments.set(f.token, { bytes: new Uint8Array(buf) });
-        else report.degraded.push(`· 附件 ${f.name} 字节为空或过大（${buf.byteLength}）`);
-        }
-      } catch (err) {
-        report.degraded.push(`· 附件 ${f.name} 取字节失败：${err?.message ?? err}`);
-      }
-      done += 1;
-      onProgress?.({ stage: 'capture', percent: 60 + Math.round((done / fileNodes.length) * 15), detail: `正在获取附件 ${done}/${fileNodes.length}` });
+    const CONCURRENCY = 3;
+    for (let i = 0; i < todo.length; i += CONCURRENCY) {
+      await Promise.all(
+        todo.slice(i, i + CONCURRENCY).map(async (node) => {
+          const f = node.data.file;
+          try {
+            const res = await fetch(`/space/api/box/stream/download/all/${f.token}`, { credentials: 'include' });
+            if (!res.ok) {
+              report.degraded.push(`· 附件 ${f.name} 下载返回 ${res.status}`);
+              return;
+            }
+            const blob = await res.blob();
+            if (blob.size && blob.size <= MAX) {
+              attachments.set(f.token, { bytes: new Uint8Array(await blob.arrayBuffer()), size: f.size ?? blob.size });
+            } else {
+              report.degraded.push(`· 附件 ${f.name} 超过 ${Math.round(MAX / 1048576)}MB 或为空，已改为链接`);
+            }
+          } catch (err) {
+            report.degraded.push(`· 附件 ${f.name} 取字节失败：${err?.message ?? err}`);
+          } finally {
+            done += 1;
+            onProgress?.({
+              stage: 'capture',
+              percent: 60 + Math.round((done / Math.max(todo.length, 1)) * 15),
+              detail: `正在获取附件 ${done}/${todo.length}`,
+            });
+          }
+        }),
+      );
     }
   }
+
 
   // 多维表格：预取视图数据，失败就保持原来的链接卡片
   if (options.embedBitable !== false) {

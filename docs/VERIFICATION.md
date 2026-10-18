@@ -59,7 +59,7 @@ node tools/check-styles.mjs samples/runs/offline/offline.docx
 - `docx2pdf.ps1` 转换成功即隐式证明（坏 XML 会让 Word 报错）
 - 新增 `$doc.ComputeStatistics(2)` 输出 `PAGE_COUNT`，断言「Word 页数 == pymupdf 页数 == meta.pageCount」
 
-### F 产物可打开性
+### G 产物可打开性
 - `F1` **XML 部件不含非法控制字符**：逐部件扫描 0x00-0x08 / 0x0B / 0x0C / 0x0E-0x1F / U+FFFE / U+FFFF。
   这些字符一旦进入 `<w:t>`，Word 会报「文件损坏」彻底打不开（实测某模板正文含 0x08，见 CHANGELOG r034）
 
@@ -67,7 +67,7 @@ node tools/check-styles.mjs samples/runs/offline/offline.docx
   （守护「两条不对齐竖线」的返工点——边框加在段落样式上会与列表编号缩进打架）
 
 
-### 左对齐体检（2026-10 新增）
+### 左对齐检查
 
 `node tools/audit-align.mjs <pdf> [--census]`：从 PDF 直接量各元素左边界，判断是否与版心对齐。
 
@@ -87,7 +87,7 @@ node tools/check-styles.mjs samples/runs/offline/offline.docx
 > **复测铁律**：改完代码必须**重启 Chrome**（或重载页面）再导出。
 > 已打开的页面跑的是注入时的旧内容脚本，直接重导会测到旧代码（本轮因此白测了两轮）。
 
-### 深度验证（样式可全文改）
+### 深度验证：样式可全文修改
 ```powershell
 powershell -File tools\verify-style-editable.ps1 -Src <docx> -PdfOut <deep.pdf>
 ```

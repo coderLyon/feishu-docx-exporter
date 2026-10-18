@@ -10,16 +10,6 @@
  * 失败一律回退，不阻塞导出。
  */
 
-/** 后台是否已获得 debugger 权限 */
-export async function hasDebuggerPermission() {
-  try {
-    const res = await chrome.runtime.sendMessage({ type: 'has-debugger' });
-    return Boolean(res?.ok);
-  } catch {
-    return false;
-  }
-}
-
 /** 申请 debugger 权限（必须在用户手势里调用，例如点「开始导出」） */
 export async function requestDebuggerPermission() {
   try {

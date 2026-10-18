@@ -163,17 +163,20 @@ if (attachmentParas.length) {
     `${attachmentParas.length} 个附件标题，误编号 ${badAttachment.length} 个`);
 }
 
-const h1Texts = paraBlocks
-  .filter((p) => /<w:pStyle w:val="FdeHeading1"/.test(p))
-  .map((p) => [...p.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)].map((m) => m[1]).join(''));
-const numbered = h1Texts.filter((t) => /^\d+[.．]/.test(t));
-if (numbered.length > 1) {
-  // 通用判据：编号必须严格递增（不能重复或倒退）。
-  // 不要求「从 1 开始」——作者可能手打了「0. 项目背景介绍」这类无 seq 的标题，
-  // 它不参与自动编号，此时自动编号从 1 续上也是正确的
-  const seq = numbered.map((t) => Number(t.match(/^(\d+)/)[1]));
-  const ok = seq.every((n, i) => i === 0 || n > seq[i - 1]);
-  check('D3', 'H1 编号严格递增（无重复/倒退）', ok, `序列 ${seq.join(',')}`);
+// D3：标题编号改为交给 Word 的 numbering（插入/删除标题可自动重排），
+// 因此不再从文本里读数字，而是检查「标题段落是否挂了 numPr」，并确认附件类标题不挂。
+const textOfPara = (p) => [...p.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)].map((m) => m[1]).join('');
+const headingParasNum = paraBlocks.filter((p) => /<w:pStyle w:val="FdeHeading\d"/.test(p));
+const numberedHeads = headingParasNum.filter((p) => /<w:numPr>/.test(p));
+if (headingParasNum.length) {
+  check(
+    'D3',
+    '标题使用自动编号（numPr）',
+    numberedHeads.length > 0,
+    `${numberedHeads.length}/${headingParasNum.length} 个标题挂编号`,
+  );
+  const attachNumbered = numberedHeads.filter((p) => /^\s*(附件|附录)/.test(textOfPara(p)));
+  check('D3b', '附件/附录标题未挂编号', attachNumbered.length === 0, `命中 ${attachNumbered.length} 个`);
 }
 
 // D4（通用）：每个代码块标题（FdeCodeCaption）后面必须紧跟代码块（渲染为单格表格）。

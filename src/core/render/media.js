@@ -15,6 +15,7 @@ import {
   WidthType,
 } from 'docx';
 import { PX_TO_EMU, PX_TO_TWIP } from '../../shared/constants.js';
+import { SHEET_MARKER } from '../ole/inject.js';
 import { t } from '../../shared/messages.js';
 import { sanitizeXmlText } from '../../shared/util.js';
 import { STYLE } from '../docx/styles.js';
@@ -27,6 +28,13 @@ function fitImage(width, height, maxWidthPx) {
 }
 
 function imageParagraph(resource, ctx, caption) {
+  // 宽截图塞进竖版会被压扁 —— 标记横页节（build.js 会据此分节）
+  const contentPx = (ctx.pageContentWidth ?? 10106) / 15;
+  const isWide = (resource?.width ?? 0) > contentPx * 1.15;
+  const markWide = (el) => {
+    if (isWide && el) el.__fdeLandscape = true;
+    return el;
+  };
   if (!resource?.data) return [];
 
   // 在表格单元格里按列宽缩放（再留一点单元格内边距），否则会撑破表格
@@ -41,7 +49,7 @@ function imageParagraph(resource, ctx, caption) {
   });
 
   // 飞书图片块默认居中
-  const result = [new Paragraph({ children: [run], alignment: AlignmentType.CENTER })];
+  const result = [markWide(new Paragraph({ children: [run], alignment: AlignmentType.CENTER }))];
   if (caption) {
     result.push(
       new Paragraph({
@@ -394,6 +402,46 @@ export function renderSheet(node, ctx) {
   // 用户可在面板选择内嵌表格的导出方式：
   //   'image'（默认）—— 截图，版式最忠实
   //   'table'        —— Word 原生表格，可编辑可搜索（需要先提取到单元格数据）
+  //   'excel'       —— Word 里内嵌真 Excel 对象（预览图为整表截图，双击进 Excel）
+  if (ctx.options?.embeddedSheet === 'excel') {
+    const html = typeof resource?.table === 'object' ? resource.table.html : null;
+    if (html) {
+      // 渲染是同步的、xlsx 生成是异步的 → 这里只登记任务，由 export.js 打包前统一生成
+      const index = (ctx.xlsxSeq = (ctx.xlsxSeq ?? 0) + 1);
+      ctx.xlsxObjects = ctx.xlsxObjects ?? [];
+      const contentPt = (ctx.pageContentWidth ?? 10106) / 20;
+      const wide = (ctx.landscapeContentWidth ?? 0) / 20;
+      const pxW = resource?.width || 800;
+      const pxH = resource?.height || 400;
+      // 宽表按横向版心算，避免在横向页里只占一半
+      const maxW = pxW / pxH > 1.6 && wide ? wide : contentPt;
+      let widthPt = Math.min(maxW, contentPt * 1.6, wide || contentPt * 1.6);
+      let heightPt = (widthPt * pxH) / pxW;
+      if (heightPt > 620) {
+        widthPt *= 620 / heightPt;
+        heightPt = 620;
+      }
+      ctx.xlsxObjects.push({
+        index,
+        html,
+        name: token,
+        preview: resource?.data ?? null,
+        widthPt,
+        heightPt,
+        wide,
+      });
+      const placeholder = new Paragraph({
+        children: [new TextRun({ text: `${SHEET_MARKER}${index}\u0001` })],
+        alignment: AlignmentType.CENTER,
+        style: STYLE.body,
+      });
+      // 预览图比竖版版心宽 → 这一节转成横向页，否则会溢出到纸外
+      if (widthPt > contentPt + 1) placeholder.__fdeLandscape = true;
+      return [placeholder];
+    }
+    if (!resource?.data) ctx.report.degraded.push(t('sheetNoCellData', ctx.lang)());
+  }
+
   if (ctx.options?.embeddedSheet === 'table') {
     // 优先用带样式的 HTML（底色/字色/字号/合并/列宽），退回纯文本 TSV
     const html = typeof resource?.table === 'object' ? resource.table.html : null;

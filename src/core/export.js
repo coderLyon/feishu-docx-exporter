@@ -4,7 +4,9 @@ import { t } from '../shared/messages.js';
 import { buildBlockTree } from './tree.js';
 import { createRenderContext, renderNode } from './render/index.js';
 import { buildDocx } from './docx/build.js';
-import { injectOleObjects } from './ole/inject.js';
+import { injectOleObjects, injectXlsxObjects } from './ole/inject.js';
+import { buildXlsx } from './ole/xlsx.js';
+import { parseSheetHtml } from './sheet/grid.js';
 import { FONT_SCHEMES, PAGE_MARGINS, PAGE_SIZES, TYPO } from '../shared/constants.js';
 
 /**
@@ -128,10 +130,42 @@ export async function exportToDocx({ url, options, resources, onProgress }) {
   });
 
   let finalBlob = blob;
+
+  // 内嵌表格 → Excel 对象：渲染期只登记任务，这里才异步生成 xlsx
+  if (ctx.xlsxObjects?.length) {
+    onProgress?.({ stage: 'pack', percent: 90, detail: `正在生成 Excel 对象（${ctx.xlsxObjects.length} 个）` });
+    const sheets = [];
+    for (const task of ctx.xlsxObjects) {
+      const grid = parseSheetHtml(task.html, { maxCols: 100 });
+      if (!grid) {
+        report.degraded.push('· 内嵌表格单元格数据解析失败，已回退为截图');
+        continue;
+      }
+      try {
+        const bytes = await buildXlsx(grid, {
+          sheetName: task.name || 'Sheet1',
+          fontName: font.eastAsia || '微软雅黑',
+        });
+        sheets.push({ index: task.index, bytes, name: task.name, preview: task.preview,
+          widthPt: task.widthPt, heightPt: task.heightPt });
+      } catch (err) {
+        report.degraded.push(`· Excel 对象生成失败：${err?.message ?? err}`);
+      }
+    }
+    if (sheets.length) {
+      try {
+        finalBlob = await injectXlsxObjects(finalBlob, sheets);
+        report.excelObjects = sheets.length;
+      } catch (err) {
+        report.degraded.push(`· Excel 对象注入失败：${err?.message ?? err}`);
+      }
+    }
+  }
+
   if (ctx.oleObjects?.length) {
     onProgress?.({ stage: 'pack', percent: 95, detail: `正在嵌入附件（${ctx.oleObjects.length} 个）` });
     try {
-      finalBlob = await injectOleObjects(blob, ctx.oleObjects);
+      finalBlob = await injectOleObjects(finalBlob, ctx.oleObjects);
     } catch (err) {
       report.degraded.push(`· 附件嵌入失败：${err?.message ?? err}`);
     }

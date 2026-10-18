@@ -33,6 +33,8 @@ window.chrome.runtime = {
       }
       window.__fdeDownloads.push({
         filename: message.filename,
+        // 记录 MIME：Chrome 会按它覆盖扩展名，落盘变 .zip 就是这里出的问题
+        mimeType: blob.type,
         base64: btoa(binary),
         size: bytes.length,
       });
@@ -105,6 +107,16 @@ const main = async () => {
 
   const download = await page.evaluate(() => window.__fdeDownloads?.[0] ?? null);
   if (download) {
+    // MIME 断言：Chrome 按 Blob MIME 覆盖扩展名，含附件的文档曾因此落盘成 .zip
+    const DOCX_MIME =
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    if (download.mimeType && download.mimeType !== DOCX_MIME) {
+      throw new Error(`导出 Blob MIME 不是 docx：${download.mimeType}（会导致落盘变 .zip）`);
+    }
+    if (!download.filename.endsWith('.docx')) {
+      throw new Error(`导出文件名不是 .docx：${download.filename}`);
+    }
+    console.log(`MIME 断言通过: ${download.mimeType}`);
     const target = path.join(OUT_DIR, download.filename);
     await fs.writeFile(target, Buffer.from(download.base64, 'base64'));
     console.log(`已取回: ${target} (${Math.round(download.size / 1024)} KB)`);

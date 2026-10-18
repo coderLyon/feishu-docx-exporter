@@ -2,6 +2,7 @@
 import { parseDocUrl } from '../core/api.js';
 import { collectResources } from './capture.js';
 import { buildFilename, exportToDocx } from '../core/export.js';
+import { DOCX_MIME } from '../core/ole/inject.js';
 import { ExportPanel } from './ui.js';
 
 const MOUNT_ID = 'fde-export-mount';
@@ -75,7 +76,10 @@ async function runExport(currentPanel, options) {
 
     currentPanel.setProgress({ stage: 'pack', percent: 92 });
     const filename = buildFilename(exported.title);
-    const objectUrl = URL.createObjectURL(exported.blob);
+    // 防御：任何后处理（OLE/zip 重打包）都可能把 MIME 换成 application/zip，
+    // 而 Chrome 会据此改扩展名 —— 这里统一归一到 docx
+    const docxBlob = new Blob([exported.blob], { type: DOCX_MIME });
+    const objectUrl = URL.createObjectURL(docxBlob);
 
     // 优先走 chrome.downloads（可拿到绝对路径）；失败则在页面里直接触发下载
     let saved = null;

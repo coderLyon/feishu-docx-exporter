@@ -140,7 +140,8 @@ export class ExportPanel {
         <div class="fde-group">
           <label class="fde-label">内嵌表格</label>
           <select class="fde-select" data-act="select" data-key="embeddedSheet">
-            <option value="image" ${o.embeddedSheet !== 'table' ? 'selected' : ''}>导出为图片（推荐）</option>
+            <option value="excel" ${o.embeddedSheet === 'excel' ? 'selected' : ''}>导出为 Excel 对象（双击可编辑）</option>
+            <option value="image" ${o.embeddedSheet === 'image' ? 'selected' : ''}>导出为图片</option>
             <option value="table" ${o.embeddedSheet === 'table' ? 'selected' : ''}>导出为可编辑表格</option>
           </select>
         </div>

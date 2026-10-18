@@ -78,25 +78,28 @@ async function extractSheetWithDebugger(tabId, rect) {
     ),
   ]);
   try {
-    // 1) 点进表格
-    for (const type of ['mousePressed', 'mouseReleased']) {
+    // 1) 双击进入单元格编辑态。
+    //    单击只会选中块（出现蓝色边框），不会进入编辑，后续 Ctrl+A 就选不到单元格。
+    await cmd('Input.dispatchMouseEvent', { type: 'mouseMoved', x: Math.round(rect.x), y: Math.round(rect.y) });
+    for (const clickCount of [1, 2]) {
       await cmd('Input.dispatchMouseEvent', {
-        type,
-        x: Math.round(rect.x),
-        y: Math.round(rect.y),
-        button: 'left',
-        clickCount: 1,
+        type: 'mousePressed', x: Math.round(rect.x), y: Math.round(rect.y), button: 'left', clickCount,
       });
+      await cmd('Input.dispatchMouseEvent', {
+        type: 'mouseReleased', x: Math.round(rect.x), y: Math.round(rect.y), button: 'left', clickCount,
+      });
+      await sleepMs(60);
     }
-    await sleepMs(400);
+    await sleepMs(500);
 
     // 2) Ctrl+A / Ctrl+C
     for (const k of [
       { key: 'a', code: 'KeyA', vk: 65 },
       { key: 'c', code: 'KeyC', vk: 67 },
     ]) {
+      // 必须用 rawKeyDown：'keyDown' 不带 text 时 Chrome 不会把它当快捷键派发给页面
       await cmd('Input.dispatchKeyEvent', {
-        type: 'keyDown', modifiers: 2, key: k.key, code: k.code,
+        type: 'rawKeyDown', modifiers: 2, key: k.key, code: k.code,
         windowsVirtualKeyCode: k.vk, nativeVirtualKeyCode: k.vk,
       });
       await cmd('Input.dispatchKeyEvent', {
@@ -113,7 +116,7 @@ async function extractSheetWithDebugger(tabId, rect) {
   } finally {
     // 4) 退出编辑态：不退出的话页面负载上升，后续采集容易超时
     try {
-      await cmd('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+      await cmd('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
       await cmd('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
     } catch {
       /* 忽略 */

@@ -131,7 +131,8 @@ export function renderBullet(node, ctx, level = 0) {
   return [
     new Paragraph({
       children: runsToDocxChildren(runs),
-      numbering: { reference: BULLET_REFERENCE, level, custom: true },
+      // 树深度从 1 开始，编号定义是 0 基 —— 不减 1 的话一级列表会套上二级样式（○、缩进 720）
+      numbering: { reference: BULLET_REFERENCE, level: Math.max(0, level - 1), custom: true },
       indent: quoteListIndent(ctx, level),
       style: styleIdFor(ctx),
       alignment: alignOf(node.data),

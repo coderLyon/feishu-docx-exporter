@@ -8,15 +8,6 @@ import { hasDebuggerPermission } from './sheet-live.js';
 
 const MOUNT_ID = 'fde-export-mount';
 
-// 后台健康检查：service worker 挂掉时 sendMessage 会静默返回 undefined，
-// 表现只是「附件不嵌入 / 表格拿不到数据」，很难定位，这里提前告警
-chrome.runtime
-  .sendMessage({ type: 'ping' })
-  .then((res) => {
-    if (!res?.ok) console.warn('[fde] 后台未响应，附件嵌入与表格读取将不可用');
-  })
-  .catch(() => console.warn('[fde] 后台连接失败'));
-
 let panel = null;
 let port = null;
 
@@ -102,6 +93,11 @@ async function runExport(currentPanel, options) {
     });
 
     currentPanel.setProgress({ stage: 'pack', percent: 92 });
+    // 把表格读取的具体失败原因顶到报告最前面，便于定位（否则只有一句笼统提示）
+    if (resources.liveSheetError) {
+      exported.report?.degraded?.unshift(`· 表格读取失败原因：${resources.liveSheetError}`);
+    }
+
     const filename = buildFilename(exported.title);
     // 防御：任何后处理（OLE/zip 重打包）都可能把 MIME 换成 application/zip，
     // 而 Chrome 会据此改扩展名 —— 这里统一归一到 docx

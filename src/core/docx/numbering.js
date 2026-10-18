@@ -4,7 +4,9 @@ import { AlignmentType, LevelFormat } from 'docx';
 export const ORDERED_REFERENCE = 'fde-ordered';
 /** 无序列表：自建编号定义，配合 numbering.custom=true 才能自由指定段落样式 */
 export const BULLET_REFERENCE = 'fde-bullet';
-const BULLET_TEXT = ['●', '○', '■'];
+// 飞书在线的无序列表是统一的小圆点（不随层级变形），Word 默认的
+// ●/○/■ 三级符号差别太大 —— 统一成「•」最接近在线观感
+const BULLET_TEXT = ['•', '•', '•'];
 
 const INDENTS = [720, 1140, 1560, 1980, 2400, 2820, 3240, 3660, 4080];
 const FORMATS = [
@@ -33,13 +35,15 @@ export function buildNumbering(instances) {
     },
   }));
 
-  const bulletLevels = INDENTS.map((left, level) => ({
+  const bulletLevels = INDENTS.map((_, level) => ({
     level,
     // docx 的 LevelFormat 枚举里没有 bullet，但 OOXML 的 numFmt 支持该值，直接写即可
     format: 'bullet',
     text: BULLET_TEXT[level % BULLET_TEXT.length],
     alignment: AlignmentType.START,
-    style: { paragraph: { indent: { left, hanging: 360 } } },
+    // 缩进比有序列表小一档：在线文档里的项目符号离正文左边界很近，
+    // 用 Word 默认 720 twips 会显得往里缩了一大截（实测差约 2 个字宽）
+    style: { paragraph: { indent: { left: 360 + 360 * level, hanging: 240 } } },
   }));
 
   const config = [{ reference: BULLET_REFERENCE, levels: bulletLevels }];

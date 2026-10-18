@@ -47,14 +47,30 @@ export async function ensureDebuggerPermission() {
  * @param {{onProgress?: (done:number,total:number)=>void, timeoutMs?:number}} [opts]
  * @returns {Promise<Array<{html:string|null, tsv:string|null, error:string|null}>>}
  */
-export async function extractSheetsLive(blockIds, { onProgress, timeoutMs = 12000 } = {}) {
+export async function extractSheetsLive(blockIds, { onProgress, timeoutMs = 12000, scrollTo } = {}) {
   const out = [];
   for (let i = 0; i < blockIds.length; i += 1) {
     onProgress?.(i, blockIds.length);
-    const id = blockIds[i];
-    let block = document.querySelector(`[data-block-id="${id}"]`);
+    const item = blockIds[i];
+    // 先滚到该表的纵向位置：虚拟化渲染下滚出视口的块会被卸载。
+    // 不能用块 id 定位 —— id 是虚拟列表动态分配的，两次渲染可能不同（实测 6 → 562）
+    if (typeof item === 'object' && item?.y != null) scrollTo?.(item.y);
+    await new Promise((r) => setTimeout(r, 700));
+
+    // 取当前已挂载、且最接近目标位置的那个表格块
+    const mounted = [...document.querySelectorAll('.docx-sheet-block')];
+    const wantTop = 120;
+    let block = null;
+    let best = Infinity;
+    for (const el of mounted) {
+      const d = Math.abs(el.getBoundingClientRect().top - wantTop);
+      if (d < best) {
+        best = d;
+        block = el;
+      }
+    }
     if (!block) {
-      out.push({ html: null, tsv: null, error: 'block 未挂载' });
+      out.push({ html: null, tsv: null, error: '表格块未挂载（文档可能还没渲染到该位置）' });
       continue;
     }
     // 滚到视口中央：debugger 的点击坐标是视口坐标
@@ -64,7 +80,6 @@ export async function extractSheetsLive(blockIds, { onProgress, timeoutMs = 1200
       /* 忽略 */
     }
     await new Promise((r) => setTimeout(r, 450));
-    block = document.querySelector(`[data-block-id="${id}"]`) ?? block;
 
     const canvas = block.querySelector('canvas') ?? block;
     const box = canvas.getBoundingClientRect();

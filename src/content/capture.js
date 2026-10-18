@@ -511,13 +511,23 @@ export async function collectResources({ onProgress, fastCapture = true, extract
   // 提取放在**所有扫描结束之后**：它会滚动并进入编辑态，
   // 夹在扫描中间会打断采集（实测会把整篇文档采空）。
   // 需要 debugger 权限；失败一律回退（localStorage / 截图），不阻塞导出。
-  if (state.extractSheets && state.sheetIds.length) {
+  // 用扫描时已确认的 docY 定位（比块 id 可靠：id 由虚拟列表动态分配）
+  const sheetTargets = state.sheets
+    .slice()
+    .sort((a, b) => a.docY - b.docY)
+    .map((sheet, i) => ({ i, y: sheet.docY }));
+
+  if (state.extractSheets && sheetTargets.length) {
     onProgress?.({
       stage: 'collect',
       percent: 34,
-      detail: `正在读取内嵌表格（${state.sheetIds.length} 张）…`,
+      detail: `正在读取内嵌表格（${sheetTargets.length} 张）…`,
     });
-    const results = await extractSheetsLive(state.sheetIds, {
+    const results = await extractSheetsLive(sheetTargets, {
+      // 提取前把页面滚回该表的位置：扫描结束后停在底部，表格块已被虚拟化卸载
+      scrollTo: (y) => {
+        if (scroller) scroller.scrollTop = Math.max(0, y - 120);
+      },
       onProgress: (done, total) =>
         onProgress?.({
           stage: 'collect',
@@ -526,19 +536,20 @@ export async function collectResources({ onProgress, fastCapture = true, extract
         }),
     });
     let ok = 0;
-    state.sheetIds.forEach((id, i) => {
+    sheetTargets.forEach((item, i) => {
       const r = results[i];
       if (!r?.html) return;
       ok += 1;
       try {
-        localStorage.setItem(`fde-sheet-html-${id}`, r.html);
-        if (r.tsv) localStorage.setItem(`fde-sheet-${id}`, r.tsv);
+        // 序号做键：块 id 是虚拟列表动态分配的，序号（文档顺序）才稳定
+        localStorage.setItem(`fde-sheet-html-${i}`, r.html);
+        if (r.tsv) localStorage.setItem(`fde-sheet-${i}`, r.tsv);
       } catch {
         /* 配额不足时忽略 */
       }
     });
-    state.liveSheets = { total: state.sheetIds.length, ok };
-    if (ok < state.sheetIds.length) {
+    state.liveSheets = { total: sheetTargets.length, ok };
+    if (ok < sheetTargets.length) {
       state.liveSheetError = results.find((r) => r?.error)?.error ?? '未取到数据';
     }
   }
@@ -548,7 +559,15 @@ export async function collectResources({ onProgress, fastCapture = true, extract
 
   const byPosition = (a, b) => a.docY - b.docY;
   const images = state.images.sort(byPosition).map(({ docY, ...rest }) => rest);
-  const sheets = state.sheets.sort(byPosition).map(({ docY, ...rest }) => rest);
+  const sheetsSorted = state.sheets.sort(byPosition);
+  // 再按文档序号查一遍单元格数据：实时提取按序号存，外部脚本按块 id 存，两者都认
+  sheetsSorted.forEach((sheet, i) => {
+    const html = localStorage.getItem(`fde-sheet-html-${i}`);
+    const tsv = localStorage.getItem(`fde-sheet-${i}`);
+    if (html) sheet.table = { html, tsv: tsv ?? '' };
+    else if (tsv && !sheet.table) sheet.table = tsv;
+  });
+  const sheets = sheetsSorted.map(({ docY, ...rest }) => rest);
   // 画板仍走扫描结果：定点采集（按类名找容器）会命中最外层的
   // whiteboard-protal-container 占位容器（0 高、永远没有 canvas），必须失效。
   // 正确做法是扫描时从 canvas 反查真实容器（见 classifyCanvas）。
@@ -560,7 +579,7 @@ export async function collectResources({ onProgress, fastCapture = true, extract
     sheets: sheets.length,
     whiteboards: whiteboards.length,
   });
-  return { images, sheets, whiteboards };
+  return { images, sheets, whiteboards, liveSheetError: state.liveSheetError ?? null, liveSheets: state.liveSheets ?? null };
 }
 
 /** 单遍滚动扫描 */
@@ -698,7 +717,11 @@ async function scanPass(scroller, state, onProgress, opts = {}) {
         if (target.kind === 'sheet') {
           const host = target.container?.closest?.('[data-block-id]') ?? null;
           const id = host?.getAttribute('data-block-id');
-          if (id && !state.sheetIds.includes(id)) state.sheetIds.push(id);
+          // 同时记住纵向位置：扫描结束后页面在底部，表格块已被虚拟化卸载，
+          // 提取时必须先滚回去才能重新挂载（否则只会得到「block 未挂载」）
+          const rect = (target.container ?? host)?.getBoundingClientRect?.();
+          const y = rect ? Math.round(rect.top + scroller.scrollTop) : 0;
+          if (id && !state.sheetIds.some((x) => x.id === id)) state.sheetIds.push({ id, y });
         }
         // 内嵌表格：若外部（tools/extract-sheets.mjs）已通过飞书「复制」拿到 TSV，
         // 就挂在资源上，渲染阶段会生成真正的 Word 表格而不是截图

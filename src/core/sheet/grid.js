@@ -139,3 +139,40 @@ export function colLetter(index) {
   }
   return s;
 }
+
+
+/**
+ * TSV → 网格（无样式）。用于只拿到纯文本、拿不到 HTML 的降级场景：
+ * 至少保证 Excel 对象里的**数值与结构**是对的，只是没有底色/字号。
+ */
+export function gridFromTsv(tsv) {
+  const rows = String(tsv ?? '')
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .filter((line, i, arr) => !(i === arr.length - 1 && line === ''));
+  if (!rows.length) return null;
+  const cells = [];
+  let colCount = 0;
+  rows.forEach((line, r) => {
+    const cols = line.split('\t');
+    colCount = Math.max(colCount, cols.length);
+    cols.forEach((text, c) => {
+      if (!text) return;
+      cells.push({
+        r, c, rowSpan: 1, colSpan: 1,
+        text: text.replace(/\u200b/g, '').trim(),
+        bg: null, color: null, sizePt: 10, bold: false,
+        align: 'left', borderColor: null, formatter: '', type: '',
+      });
+    });
+  });
+  return {
+    rowCount: rows.length,
+    colCount,
+    colsPx: [],
+    cells,
+    merges: [],
+    covered: new Set(),
+    hasBorder: true,
+  };
+}

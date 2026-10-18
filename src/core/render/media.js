@@ -410,7 +410,9 @@ export function renderSheet(node, ctx) {
   //   'excel'       —— Word 里内嵌真 Excel 对象（预览图为整表截图，双击进 Excel）
   if (ctx.options?.embeddedSheet === 'excel') {
     const html = typeof resource?.table === 'object' ? resource.table.html : null;
-    if (html) {
+    const tsv = typeof resource?.table === 'object' ? resource.table.tsv : resource?.table;
+    // HTML 有样式优先；只有 TSV 时也生成（值对、样式朴素），别直接退成图片
+    if (html || tsv) {
       // 渲染是同步的、xlsx 生成是异步的 → 这里只登记任务，由 export.js 打包前统一生成
       const index = (ctx.xlsxSeq = (ctx.xlsxSeq ?? 0) + 1);
       ctx.xlsxObjects = ctx.xlsxObjects ?? [];
@@ -429,6 +431,7 @@ export function renderSheet(node, ctx) {
       ctx.xlsxObjects.push({
         index,
         html,
+        tsv,
         name: token,
         preview: resource?.data ?? null,
         widthPt,
@@ -444,6 +447,8 @@ export function renderSheet(node, ctx) {
       if (widthPt > contentPt + 1) placeholder.__fdeLandscape = true;
       return [placeholder];
     }
+    // 选了 Excel 对象但没拿到单元格数据：必须说出来，不能静默退回截图
+    ctx.report.degraded.push('· 内嵌表格未读到单元格数据，已用截图代替（面板里重新选择一次「Excel 对象」可申请权限）');
     if (!resource?.data) ctx.report.degraded.push(t('sheetNoCellData', ctx.lang)());
   }
 

@@ -4,8 +4,18 @@ import { collectResources } from './capture.js';
 import { buildFilename, exportToDocx } from '../core/export.js';
 import { DOCX_MIME } from '../core/ole/inject.js';
 import { ExportPanel } from './ui.js';
+import { hasDebuggerPermission } from './sheet-live.js';
 
 const MOUNT_ID = 'fde-export-mount';
+
+// 后台健康检查：service worker 挂掉时 sendMessage 会静默返回 undefined，
+// 表现只是「附件不嵌入 / 表格拿不到数据」，很难定位，这里提前告警
+chrome.runtime
+  .sendMessage({ type: 'ping' })
+  .then((res) => {
+    if (!res?.ok) console.warn('[fde] 后台未响应，附件嵌入与表格读取将不可用');
+  })
+  .catch(() => console.warn('[fde] 后台连接失败'));
 
 let panel = null;
 let port = null;
@@ -52,7 +62,23 @@ async function runExport(currentPanel, options) {
   currentPanel.setState({ mode: 'busy', visible: true, progress: { percent: 2, stage: 'scroll' } });
 
   try {
+    // 选「Excel 对象」时需要单元格数据。注意：**不能在这里申请调试权限** ——
+    // 浏览器权限弹窗会抢走焦点，飞书随即节流渲染，整篇采集会变成空文档（实测）。
+    // 权限由用户在面板里主动开启，这里只查是否已有。
+    let extractSheets = false;
+    if (options.embeddedSheet === 'excel') {
+      try {
+        extractSheets = await hasDebuggerPermission();
+      } catch {
+        extractSheets = false;
+      }
+      if (!extractSheets) {
+        currentPanel.setProgress({ stage: 'collect', percent: 3, detail: '未开启表格读取权限，将用截图代替' });
+      }
+    }
+
     const resources = await collectResources({
+      extractSheets,
       fastCapture: options.fastCapture !== false,
       onProgress: (info) => {
         if (!info?.total) return;

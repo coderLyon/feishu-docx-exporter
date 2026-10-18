@@ -311,6 +311,18 @@ export class ExportPanel {
         target.addEventListener('change', () => {
           const options = { ...this.state.options, [key]: target.value };
           this.setState({ options });
+          // 选「Excel 对象」需要读取表格单元格数据（chrome.debugger）。
+          // 权限必须**在用户手势里**申请 —— 放到导出时申请会弹窗抢焦点，
+          // 飞书随后节流渲染，整篇采集会变空（实测过）。
+          if (key === 'embeddedSheet' && target.value === 'excel') {
+            requestDebuggerPermission().then((ok) => {
+              if (!ok) {
+                this.setState({
+                  error: '未授予「调试」权限，导出时会用截图代替 Excel 对象',
+                });
+              }
+            });
+          }
         });
       }
     });

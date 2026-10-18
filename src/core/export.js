@@ -6,7 +6,7 @@ import { createRenderContext, renderNode } from './render/index.js';
 import { buildDocx } from './docx/build.js';
 import { injectOleObjects, injectXlsxObjects } from './ole/inject.js';
 import { buildXlsx } from './ole/xlsx.js';
-import { parseSheetHtml } from './sheet/grid.js';
+import { gridFromTsv, parseSheetHtml } from './sheet/grid.js';
 import { FONT_SCHEMES, PAGE_MARGINS, PAGE_SIZES, TYPO } from '../shared/constants.js';
 
 /**
@@ -152,7 +152,9 @@ export async function exportToDocx({ url, options, resources, onProgress }) {
     onProgress?.({ stage: 'pack', percent: 90, detail: `正在生成 Excel 对象（${ctx.xlsxObjects.length} 个）` });
     const sheets = [];
     for (const task of ctx.xlsxObjects) {
-      const grid = parseSheetHtml(task.html, { maxCols: 100 });
+      const grid = task.html
+        ? parseSheetHtml(task.html, { maxCols: 100 })
+        : gridFromTsv(task.tsv);
       if (!grid) {
         report.degraded.push('· 内嵌表格单元格数据解析失败，已回退为截图');
         continue;

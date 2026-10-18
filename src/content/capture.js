@@ -17,6 +17,8 @@
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+import { extractSheetsLive } from './sheet-live.js';
+
 function dataUrlToBytes(dataUrl) {
   const base64 = dataUrl.split(',')[1] ?? '';
   const binary = atob(base64);
@@ -452,14 +454,16 @@ async function waitForDocMounted(scroller, timeoutMs = 20000) {
   return false;
 }
 
-export async function collectResources({ onProgress, fastCapture = true } = {}) {
+export async function collectResources({ onProgress, fastCapture = true, extractSheets = false } = {}) {
   const state = {
     fast: fastCapture,
+    extractSheets,
     images: [],
     sheets: [],
     whiteboards: [],
     seenImages: new Set(),
     seenKeys: new Set(),
+    sheetIds: [],
   };
 
   // 采集前把页面提到前台：后台/被遮挡的标签页里 visibilityState=hidden，
@@ -494,10 +498,49 @@ export async function collectResources({ onProgress, fastCapture = true } = {}) 
   if (fast) {
     await scanPass(scroller, state, onProgress, { stepRatio: 0.55, minStep: 240, minWait: 260, maxWait: 800, initial: 500 });
     await scanPass(scroller, state, onProgress, { stepRatio: 0.95, minStep: 320, minWait: 90, maxWait: 450, initial: 300 });
+  }
+
+  if (fast) {
+    await scanPass(scroller, state, onProgress, { stepRatio: 0.95, minStep: 320, minWait: 90, maxWait: 450, initial: 300 });
   } else {
     await warmUpScroll(scroller, onProgress);
     await scanPass(scroller, state, onProgress);
     await scanPass(scroller, state, onProgress);
+  }
+
+  // 提取放在**所有扫描结束之后**：它会滚动并进入编辑态，
+  // 夹在扫描中间会打断采集（实测会把整篇文档采空）。
+  // 需要 debugger 权限；失败一律回退（localStorage / 截图），不阻塞导出。
+  if (state.extractSheets && state.sheetIds.length) {
+    onProgress?.({
+      stage: 'collect',
+      percent: 34,
+      detail: `正在读取内嵌表格（${state.sheetIds.length} 张）…`,
+    });
+    const results = await extractSheetsLive(state.sheetIds, {
+      onProgress: (done, total) =>
+        onProgress?.({
+          stage: 'collect',
+          percent: 34 + Math.round((done / Math.max(total, 1)) * 4),
+          detail: `正在读取内嵌表格 ${done}/${total}`,
+        }),
+    });
+    let ok = 0;
+    state.sheetIds.forEach((id, i) => {
+      const r = results[i];
+      if (!r?.html) return;
+      ok += 1;
+      try {
+        localStorage.setItem(`fde-sheet-html-${id}`, r.html);
+        if (r.tsv) localStorage.setItem(`fde-sheet-${id}`, r.tsv);
+      } catch {
+        /* 配额不足时忽略 */
+      }
+    });
+    state.liveSheets = { total: state.sheetIds.length, ok };
+    if (ok < state.sheetIds.length) {
+      state.liveSheetError = results.find((r) => r?.error)?.error ?? '未取到数据';
+    }
   }
 
   scroller.scrollTop = 0;
@@ -651,6 +694,12 @@ async function scanPass(scroller, state, onProgress, opts = {}) {
 
       if (capture) {
         const bucket = target.kind === 'sheet' ? state.sheets : state.whiteboards;
+        // 记下表格块 id：扫描后逐个提取单元格数据（虚拟化下元素会被卸载，只能按 id 重查）
+        if (target.kind === 'sheet') {
+          const host = target.container?.closest?.('[data-block-id]') ?? null;
+          const id = host?.getAttribute('data-block-id');
+          if (id && !state.sheetIds.includes(id)) state.sheetIds.push(id);
+        }
         // 内嵌表格：若外部（tools/extract-sheets.mjs）已通过飞书「复制」拿到 TSV，
         // 就挂在资源上，渲染阶段会生成真正的 Word 表格而不是截图
         let table = null;

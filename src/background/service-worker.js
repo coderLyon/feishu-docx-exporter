@@ -60,7 +60,73 @@ function waitForDownloadPath(downloadId, timeout = 10000) {
   });
 }
 
+const sleepMs = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * 用 chrome.debugger 发 trusted 输入，把内嵌表格的单元格数据读出来。
+ *
+ * 为什么必须 trusted：飞书表格是 canvas + 自绘选区，合成事件一律不触发
+ * （三种组合都实测过，见 tools/probe-sheet-hook.mjs）。
+ */
+async function extractSheetWithDebugger(tabId, rect) {
+  const cmd = (method, params) => chrome.debugger.sendCommand({ tabId }, method, params);
+  await chrome.debugger.attach({ tabId }, '1.3');
+  try {
+    // 1) 点进表格
+    for (const type of ['mousePressed', 'mouseReleased']) {
+      await cmd('Input.dispatchMouseEvent', {
+        type,
+        x: Math.round(rect.x),
+        y: Math.round(rect.y),
+        button: 'left',
+        clickCount: 1,
+      });
+    }
+    await sleepMs(400);
+
+    // 2) Ctrl+A / Ctrl+C
+    for (const k of [
+      { key: 'a', code: 'KeyA', vk: 65 },
+      { key: 'c', code: 'KeyC', vk: 67 },
+    ]) {
+      await cmd('Input.dispatchKeyEvent', {
+        type: 'keyDown', modifiers: 2, key: k.key, code: k.code,
+        windowsVirtualKeyCode: k.vk, nativeVirtualKeyCode: k.vk,
+      });
+      await cmd('Input.dispatchKeyEvent', {
+        type: 'keyUp', modifiers: 2, key: k.key, code: k.code,
+        windowsVirtualKeyCode: k.vk, nativeVirtualKeyCode: k.vk,
+      });
+      await sleepMs(320);
+    }
+    await sleepMs(500);
+
+    // 剪贴板由内容脚本读（扩展有 clipboardRead 权限）；
+    // 这里只负责把「真实按键」发出去 —— 这是飞书唯一认的输入方式
+    return { ok: true };
+  } finally {
+    // 4) 退出编辑态：不退出的话页面负载上升，后续采集容易超时
+    try {
+      await cmd('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+      await cmd('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+    } catch {
+      /* 忽略 */
+    }
+    try {
+      await chrome.debugger.detach({ tabId });
+    } catch {
+      /* 忽略 */
+    }
+  }
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // 健康检查：内容脚本用它确认后台真的活着（后台挂了时 sendMessage 会静默返回 undefined）
+  if (message?.type === 'ping') {
+    sendResponse({ ok: true, at: Date.now() });
+    return undefined;
+  }
+
   if (message?.type === 'save-docx') {
     chrome.downloads.download(
       {
@@ -124,6 +190,31 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ ok: false, error: String(error.message ?? error) });
       }
     })();
+    return true;
+  }
+
+  if (message?.type === 'has-debugger') {
+    chrome.permissions.contains({ permissions: ['debugger'] }).then((ok) => sendResponse({ ok }));
+    return true;
+  }
+
+  if (message?.type === 'request-debugger') {
+    chrome.permissions
+      .request({ permissions: ['debugger'] })
+      .then((ok) => sendResponse({ ok }))
+      .catch((error) => sendResponse({ ok: false, error: String(error?.message ?? error) }));
+    return true;
+  }
+
+  if (message?.type === 'extract-sheet') {
+    const tabId = sender.tab?.id;
+    if (tabId == null) {
+      sendResponse({ ok: false, error: '没有 tabId' });
+      return undefined;
+    }
+    extractSheetWithDebugger(tabId, message.rect ?? { x: 0, y: 0 })
+      .then((data) => sendResponse({ ok: Boolean(data?.ok) }))
+      .catch((error) => sendResponse({ ok: false, error: String(error?.message ?? error) }));
     return true;
   }
 

@@ -163,20 +163,30 @@ if (attachmentParas.length) {
     `${attachmentParas.length} 个附件标题，误编号 ${badAttachment.length} 个`);
 }
 
-// D3：标题编号改为交给 Word 的 numbering（插入/删除标题可自动重排），
-// 因此不再从文本里读数字，而是检查「标题段落是否挂了 numPr」，并确认附件类标题不挂。
-const textOfPara = (p) => [...p.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)].map((m) => m[1]).join('');
-const headingParasNum = paraBlocks.filter((p) => /<w:pStyle w:val="FdeHeading\d"/.test(p));
-const numberedHeads = headingParasNum.filter((p) => /<w:numPr>/.test(p));
-if (headingParasNum.length) {
+// D3：标题编号绑定在**样式**上（styles.xml），这样用户手动套用「标题 N」即自动出编号。
+// 段落本身不再写 numPr，因此这里检查样式定义而非段落。
+const headingStyles = [...stylesXml.matchAll(/<w:style [^>]*w:styleId="(FdeHeading\d)"[^>]*>([\s\S]*?)<\/w:style>/g)];
+const styledWithNumbering = headingStyles.filter((m) => /<w:numPr>/.test(m[2]));
+if (headingStyles.length) {
   check(
     'D3',
-    '标题使用自动编号（numPr）',
-    numberedHeads.length > 0,
-    `${numberedHeads.length}/${headingParasNum.length} 个标题挂编号`,
+    '标题样式自带编号（styles.xml numPr）',
+    styledWithNumbering.length === headingStyles.length,
+    `${styledWithNumbering.length}/${headingStyles.length} 个标题样式绑定编号`,
   );
-  const attachNumbered = numberedHeads.filter((p) => /^\s*(附件|附录)/.test(textOfPara(p)));
-  check('D3b', '附件/附录标题未挂编号', attachNumbered.length === 0, `命中 ${attachNumbered.length} 个`);
+}
+
+// D3b：附件 / 附录类标题不得参与编号（打包时会写入 numId=0）
+const textOfPara = (p) => [...p.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)].map((m) => m[1]).join('');
+const attachParas = paraBlocks.filter(
+  (p) => /<w:pStyle w:val="FdeHeading\d"\/>/.test(p) && /^\s*(附件|附录)/.test(textOfPara(p)),
+);
+const attachNumbered = attachParas.filter((p) => {
+  const m = p.match(/<w:numId w:val="(\d+)"\/>/);
+  return m && m[1] !== '0';
+});
+if (attachParas.length) {
+  check('D3b', '附件/附录标题未参与编号', attachNumbered.length === 0, `${attachParas.length} 个附件标题，参与编号 ${attachNumbered.length} 个`);
 }
 
 // D4（通用）：每个代码块标题（FdeCodeCaption）后面必须紧跟代码块（渲染为单格表格）。

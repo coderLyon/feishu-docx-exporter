@@ -34,6 +34,7 @@ function sampleDocText(doc, limit = 3000) {
   return parts.join('\n').slice(0, limit);
 }
 
+
 export async function exportToDocx({ url, options, resources, onProgress }) {
   onProgress?.({ stage: 'resolve', percent: 5 });
 

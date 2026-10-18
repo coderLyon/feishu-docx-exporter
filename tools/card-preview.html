@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>附件卡片预览</title>
+<style>
+  body { background:#f5f6f7; font-family:'Microsoft YaHei',sans-serif; padding:24px; margin:0; }
+  h1 { font-size:16px; color:#1f2329; font-weight:600; margin:0 0 4px; }
+  p.hint { font-size:12px; color:#8f959e; margin:0 0 20px; }
+  .row { margin-bottom:14px; }
+  .cap { font-size:12px; color:#646a73; margin-bottom:6px; }
+  img { display:block; }
+</style></head>
+<body>
+  <h1>附件卡片（build 后的实际渲染）</h1>
+  <p class="hint">由 src/core/ole/icon.js 的 makeFileCardPng 现场绘制，尺寸 720×112 px（Word 内按 360×56pt 显示）</p>
+  <div id="out"></div>
+  <script type="module">
+    import { makeFileCardPng } from '../src/core/ole/icon.js';
+    const cases = [
+      ['【机电】试验任务管理_界面设计.html', 96088],
+      ['接口说明-二期.docx', 2 * 1024 * 1024 + 300000],
+      ['数据字典.pdf', 880000],
+      ['一个名字特别长特别长的附件文件用于验证省略号处理逻辑-v3-final.html', 12000],
+    ];
+    const out = document.getElementById('out');
+    for (const [name, size] of cases) {
+      const { bytes } = await makeFileCardPng(name, size);
+      const url = URL.createObjectURL(new Blob([bytes], { type: 'image/png' }));
+      const row = document.createElement('div');
+      row.className = 'row';
+      row.innerHTML = `<div class="cap">${name}</div>`;
+      const img = document.createElement('img');
+      img.src = url;
+      img.width = 360;
+      img.height = 56;
+      row.appendChild(img);
+      out.appendChild(row);
+    }
+    document.title = 'ready';
+  </script>
+</body></html>

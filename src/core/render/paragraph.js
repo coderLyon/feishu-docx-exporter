@@ -17,7 +17,7 @@ import {
 import { parseAttributedText } from '../text.js';
 import { runsToDocxChildren } from '../docx/runs.js';
 import { QUOTE_INK, STYLE } from '../docx/styles.js';
-import { BULLET_REFERENCE, HEADING_REFERENCE } from '../docx/numbering.js';
+import { BULLET_REFERENCE } from '../docx/numbering.js';
 import { highlightLine, isDarkBackground, safeBackground } from '../docx/highlight.js';
 import { toHexColor } from '../../shared/util.js';
 
@@ -105,7 +105,7 @@ export function renderTextLike(node, ctx) {
         children: headingChildren,
         style: STYLE.heading(level),
         alignment: alignOf(node.data),
-        ...(isAttachment ? {} : { numbering: { reference: HEADING_REFERENCE, level: level - 1 } }),
+        // 编号由标题样式自带（见 styles.js），附件标题在打包后取消编号
       }),
       ...ctx.renderChildren(node.children, 0),
     ];

@@ -46,9 +46,9 @@ export function buildNumbering(instances) {
     format: 'bullet',
     text: BULLET_TEXT[level % BULLET_TEXT.length],
     alignment: AlignmentType.START,
-    // 缩进比有序列表小一档：在线文档里的项目符号离正文左边界很近，
-    // 用 Word 默认 720 twips 会显得往里缩了一大截（实测差约 2 个字宽）
-    style: { paragraph: { indent: { left: 360 + 360 * level, hanging: 240 } } },
+    // 圆点左边缘必须与正文左边界对齐（用户要求）：left = hanging 时首行从 0 开始，
+    // 符号落在版心左边界上，正文从 left 处起排。逐级各进 240 twips。
+    style: { paragraph: { indent: { left: 240 * (level + 1), hanging: 240 } } },
   }));
 
   // 标题多级编号：level n 的文本是 %1.%2.…%n+1.，由 Word 维护计数器

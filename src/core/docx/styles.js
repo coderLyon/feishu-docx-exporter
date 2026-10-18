@@ -1,3 +1,4 @@
+import { HEADING_REFERENCE } from './numbering.js';
 /**
  * 段落 / 字符样式体系。
  *
@@ -64,12 +65,16 @@ export function buildStyles(options) {
     return {
       id: STYLE.heading(level),
       name: `heading ${level}`,
+      // 回车后自动变正文：否则新建的下一段仍是标题，必须手动改样式
+      next: STYLE.body,
       run: { font: bodyFont, size: spec.size, bold: true, color: INK },
       paragraph: {
         outlineLevel: level - 1,
         spacing: spacing(spec.before, spec.after),
-        // 标题必须与下一段同页：否则会出现「标题孤零零留在页底、内容翻到下一页」，
-        // 长文档里这种断法最伤阅读连贯性（实测 p19 底部就有一个）
+        // 编号绑定在**样式**上：用户手动套用「标题 N」即自动带出对应层级编号，
+        // 而不是依赖导出时逐段写入的 numPr
+        numbering: { reference: HEADING_REFERENCE, level: level - 1 },
+        // 标题必须与下一段同页：否则会出现「标题孤零零留在页底、内容翻到下一页」
         keepNext: true,
       },
     };

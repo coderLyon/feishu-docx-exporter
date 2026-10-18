@@ -129,8 +129,32 @@ async function runExport(currentPanel, options) {
         stats: exported.stats,
       },
     });
+
+    // 记录上一次导出结果：排查问题时可据此读取降级原因（自动化验证也依赖它）
+    try {
+      localStorage.setItem(
+        'fde-last-run',
+        JSON.stringify({
+          ok: true,
+          at: Date.now(),
+          filename,
+          size: exported.blob.size,
+          stats: exported.stats,
+          degraded: exported.report?.degraded ?? [],
+          liveSheetError: resources.liveSheetError ?? null,
+          liveSheets: resources.liveSheets ?? null,
+        }),
+      );
+    } catch {
+      /* 配额不足时忽略 */
+    }
   } catch (error) {
     console.error('[fde] 导出失败', error);
+    try {
+      localStorage.setItem('fde-last-run', JSON.stringify({ ok: false, at: Date.now(), error: String(error.message ?? error) }));
+    } catch {
+      /* 忽略 */
+    }
     currentPanel.setState({ mode: 'error', visible: true, error: String(error.message ?? error) });
   }
 }

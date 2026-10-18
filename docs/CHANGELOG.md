@@ -515,6 +515,26 @@ A4 竖版版心 674px、11 列平均每列 61px，`Windows`/`Android`/`通过` �
 **限制**：图标统一用内置 32×32 PNG（不做按文件类型的图标）；
 超过 20MB 的附件仍以链接呈现。
 
+
+## v0.8.0（2026-10-18）：附件类型图标 + 工程整理
+
+**功能：附件图标按类型区分**
+原来所有附件都用同一张 32×32 占位图；现在用 canvas 现画 64×64 圆角图标，
+按扩展名取底色（html 橙、pdf 红、docx 蓝、xlsx 绿、zip 金、图片紫…），
+中间标扩展名。实测 HTML 附件在文档里是橙色「HTML」方块。
+
+**工程整理（本版起，每个 0.x 版本发布前都做）**
+
+| 项目 | 处理 |
+| --- | --- |
+| `.chrome-user` 6.0GB → 2.0GB | 删掉 `OptGuideOnDeviceModel`（4GB，Chrome 自动重建）与模型缓存 |
+| `samples/out` 153MB → 40KB | 清空临时渲染图、PDF、日志；只保留证据文件到 `samples/evidence/` |
+| `samples/runs` 92 轮 → 10 轮 | 只留 r010/r020（文档引用）与最近 r092–r098 |
+| 死代码 | 删 `fitWidths` 包装、未使用的 `computeColumnWidths` 导入、无效的 `ORDERED_REFERENCE` re-export |
+| 文档 | README 补附件开关；CHANGELOG 补本版；ARCHITECTURE 5.2 已改「已打通」 |
+
+**流程规矩（已写入项目记忆）**：每次 `0.x` 版本发布前必须做一轮文件 / 源码 / 文档整理。
+
 ## 已知遗留
 
 1. 内嵌电子表格原生化（接口与解码路径已存档，卡在私有二进制格式）

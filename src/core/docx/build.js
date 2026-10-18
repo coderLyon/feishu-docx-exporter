@@ -7,7 +7,7 @@ import {
   TextRun,
 } from 'docx';
 import { STYLE, buildStyles } from './styles.js';
-import { buildNumbering, ORDERED_REFERENCE } from './numbering.js';
+import { buildNumbering } from './numbering.js';
 import { PAGE_MARGINS, PAGE_SIZES } from '../../shared/constants.js';
 
 /**
@@ -97,4 +97,3 @@ export async function buildDocx({ title, children, options, orderedInstances }) 
   return Packer.toBlob(document);
 }
 
-export { ORDERED_REFERENCE };

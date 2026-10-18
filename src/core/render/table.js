@@ -144,10 +144,6 @@ export function computeColumnWidths(columnTexts, availableTwips, widthsPx = [], 
   return width.map((w) => Math.max(120, Math.round(w)));
 }
 
-/** 兼容旧调用：按 px 宽度列表 + 每列内容下限计算 */
-function fitWidths(widthsPx, availableTwips, columnTexts) {
-  return computeColumnWidths(columnTexts, availableTwips, widthsPx);
-}
 
 
 /**

@@ -10,22 +10,10 @@
  */
 import JSZip from 'jszip';
 import { buildOleBin } from './build.js';
+import { makeIconPng } from './icon.js';
 
 /** 占位标记：渲染阶段写这段文字，后处理时整段替换成 OLE 对象 */
 export const OLE_MARKER = '\u0001FDE_OLE_';
-
-/** 包内 Packager 图标（32×32 PNG，避免依赖 EMF） */
-const ICON_PNG_BASE64 =
-  'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAWklEQVR42u3NMQEAAAgDoJnc6BpjDyRg' +
-  'blXVvXsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' +
-  'AAAAAAAAAAAAAAAA4NcAmPUBAaXlVYUAAAAASUVORK5CYII=';
-
-function pngBytes() {
-  const bin = atob(ICON_PNG_BASE64);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i += 1) out[i] = bin.charCodeAt(i);
-  return out;
-}
 
 function oleObjectXml(shapeId, oleRelId, imgRelId, sizePt = 48) {
   return `<w:r><w:object w:dxaOrig="${sizePt * 20}" w:dyaOrig="${sizePt * 20}">
@@ -52,14 +40,20 @@ export async function injectOleObjects(blob, attachments) {
   let rels = await zip.file('word/_rels/document.xml.rels').async('string');
   let ct = await zip.file('[Content_Types].xml').async('string');
 
-  const icon = pngBytes();
   const relAdds = [];
   const ctAdds = [];
 
   for (const att of attachments) {
     const n = att.index;
     zip.file(`word/embeddings/oleObject${n}.bin`, buildOleBin(att.bytes, att.name));
-    zip.file(`word/media/fdeole${n}.png`, icon);
+    // 按扩展名现画图标（无法生成时退回内置底板）
+    let icon = null;
+    try {
+      icon = await makeIconPng(att.name);
+    } catch {
+      icon = new Uint8Array([0]);
+    }
+    if (icon.length > 1) zip.file(`word/media/fdeole${n}.png`, icon);
 
     const oleRel = `rIdFdeOle${n}`;
     const imgRel = `rIdFdeOleImg${n}`;

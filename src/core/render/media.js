@@ -18,7 +18,6 @@ import { PX_TO_EMU, PX_TO_TWIP } from '../../shared/constants.js';
 import { t } from '../../shared/messages.js';
 import { sanitizeXmlText } from '../../shared/util.js';
 import { STYLE } from '../docx/styles.js';
-import { computeColumnWidths } from './table.js';
 
 /** 按页面宽度等比缩放 */
 function fitImage(width, height, maxWidthPx) {

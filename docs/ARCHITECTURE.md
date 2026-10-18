@@ -148,7 +148,7 @@ f1.f2.f12                       ← 工作表数据
 复现工具：`tools/probe-sheet-api.mjs`（试端点）、`probe-sheet-network.mjs`（抓真实请求）、
 `probe-sheet-vars2.mjs`（抓响应并解 gzip）、`probe-sheet-block.mjs`（解块）、`probe-sheet-pb.mjs`（protobuf 转储）。
 
-## 五、尚未打通的两条路（附证据）
+## 五、打通记录（内嵌表格 / OLE 附件）
 
 ### 内嵌电子表格 → 原生表格
 - 接口：`POST /space/api/v3/sheet/client_vars`，**必须带 `memberId`（传 0 即可）**，否则返回 400 `Parameter Error`
@@ -165,3 +165,33 @@ f1.f2.f12                       ← 工作表数据
 - 取址：`POST /space/api/box/file/cdn_url/`，body `[{ "file_token": "<token>", "policy": "near" }]` → 返回 `lf*-drive.feishucdn.com` 直链（带 cipher/secret/nonce）
 - **阻塞点**：docx@9 无 OLE 封装 API；Word 双击激活内嵌对象需要 OLE 复合文档（Compound File）格式，裸字节内嵌大概率只能显示图标且打不开
 - 现状：以「📎 文件名 + 大小 + 超链接」的文件卡片呈现
+
+### 5.2 附件以文件图标嵌入、双击打开（OLE，**已打通** 2026-10-18）
+
+**要素**（全部由真实文档逆向确认，缺一不可）：
+
+1. `word/embeddings/oleObject1.bin` —— CFB 复合文档，三个流：
+   `\x01CompObj`（"OLE Package"，76B，可原样复用）、`\x03ObjInfo`（6B）、
+   `\x01Ole10Native`（载荷）。**根存储 CLSID 必须是 `0c000300-0000-0000-c000-000000000046`**。
+
+2. `\x01Ole10Native` 布局（逐字段验证）：
+   ```
+   u32 totalSize(=流长-4) | u16 flags=2 | cstr label | cstr fullPath |
+   u16 0 | u16 3 | u32 tempPathLen | bytes tempPath |
+   u32 dataSize | bytes data | u32 utf16Len | bytes tempPathUtf16
+   ```
+
+3. `document.xml`：`<w:object>` + `<o:OLEObject Type="Embed" ProgID="Package" DrawAspect="Icon"/>`
+   + 完整 VML `shapetype/shape/imagedata`（简化版 Word 不渲染图标）
+
+4. rels（oleObject + 图标 image）；`[Content_Types].xml` 声明 `bin`、`emf`/`png`
+
+**验证**：Word COM 读 `InlineShapes.Item(i).OLEFormat.ClassType` 应为 `Package`，
+再 `Activate()` 无异常。注意：**结构错了 Word 也能打开文档、不报损坏**，
+只有 Activate 会失败，所以必须做激活验证。
+
+**四个致命坑**：根 CLSID 为 0 / 漏 UTF-16 路径段 / tempPath 没切掉原文件名 /
+VML 用简化 shapetype。
+
+**工具**：`tools/build-ole.mjs`（复刻 Ole10Native）、`tools/inject-ole.mjs`（注入 docx）、
+`tools/activate-ole2.ps1`（Word 侧验证）。

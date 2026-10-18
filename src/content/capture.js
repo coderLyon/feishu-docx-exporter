@@ -441,48 +441,6 @@ function classifyCanvas(canvas) {
  * 这里改为按文档顺序定位画板容器，逐个滚动到位、等渲染完成后再截。
  * 顺带保证顺序严格等于文档中出现顺序（渲染时按下标消费依赖这一点）。
  */
-async function collectWhiteboards() {
-  const seen = new Set();
-  const containers = [];
-  for (const el of document.querySelectorAll('[class*="whiteboa"]')) {
-    const block = el.closest('[data-block-id]') ?? el;
-    const key = block.getAttribute?.('data-block-id') ?? el;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    containers.push(block);
-  }
-
-  const out = [];
-  for (const container of containers) {
-    // 画板是重型懒挂载：容器先是 0 高的占位，滚到位后还要几秒才画出 canvas。
-    // 因此每次都重新滚一次，并轮询等待 canvas 出现（最多约 8 秒）
-    let capture = null;
-    for (let i = 0; i < 8 && !capture; i += 1) {
-      container.scrollIntoView({ block: 'center' });
-      await sleep(i === 0 ? 400 : 1000);
-      if (!container.querySelector('canvas')) continue;
-      capture = await captureCanvasBlock(container, { singleTile: true });
-    }
-    if (!capture) continue;
-    const rect = container.getBoundingClientRect();
-    out.push({ kind: 'whiteboard', ...capture, docY: rect.top + window.scrollY });
-  }
-  return out;
-}
-
-/**
- * 采集全部页面资源。
- *
- * 飞书文档虚拟化渲染 + 懒渲染存在竞态，单遍扫描可能漏采，
- * 因此做两遍扫描；用「资源类型 + 文档纵向位置」去重，最后按位置排序，
- * 保证资源顺序与文档中出现顺序一致（渲染时按下标消费依赖这一点）。
- * @returns {Promise<{images: Array, sheets: Array, whiteboards: Array}>}
- */
-/**
- * 等文档主体挂载完成（最多约 20 秒）。
- * 飞书是虚拟化渲染：页面刚打开时 DOM 里可能一个内容块都没有，
- * 此时采集必然漏掉全部图片/内嵌表格/画板。
- */
 async function waitForDocMounted(scroller, timeoutMs = 20000) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
@@ -494,8 +452,9 @@ async function waitForDocMounted(scroller, timeoutMs = 20000) {
   return false;
 }
 
-export async function collectResources({ onProgress } = {}) {
+export async function collectResources({ onProgress, fastCapture = true } = {}) {
   const state = {
+    fast: fastCapture,
     images: [],
     sheets: [],
     whiteboards: [],
@@ -525,12 +484,21 @@ export async function collectResources({ onProgress } = {}) {
     onProgress?.({ stage: 'collect', percent: 22, detail: '文档尚未渲染完成，仍尝试采集…' });
   }
 
-  // 先慢速预热滚一遍：内嵌电子表格/画板是重型懒挂载块，
-  // 扫描节奏太快时它们还没渲染就翻过去了（实测某文档 11 张内嵌表格全部漏采）
-  await warmUpScroll(scroller, onProgress);
-
-  await scanPass(scroller, state, onProgress);
-  await scanPass(scroller, state, onProgress);
+  // 采集节奏：
+  //   fast（默认）—— 第一趟用半步长 + 自适应等待，兼作「预热」边滚边采；
+  //                  第二趟只做快速补漏（大步长 + 短等待）。
+  //   safe        —— 旧行为：慢速预热 → 扫描 → 再扫描（三步全量）。
+  // 为什么第一趟必须慢：内嵌表格/画板是重型懒挂载块，滚太快它们还没渲染就翻过去了
+  // （实测某文档 11 张内嵌表格全部漏采）。
+  const fast = state.fast !== false;
+  if (fast) {
+    await scanPass(scroller, state, onProgress, { stepRatio: 0.55, minStep: 240, minWait: 260, maxWait: 800, initial: 500 });
+    await scanPass(scroller, state, onProgress, { stepRatio: 0.95, minStep: 320, minWait: 90, maxWait: 450, initial: 300 });
+  } else {
+    await warmUpScroll(scroller, onProgress);
+    await scanPass(scroller, state, onProgress);
+    await scanPass(scroller, state, onProgress);
+  }
 
   scroller.scrollTop = 0;
   await sleep(300);
@@ -572,6 +540,29 @@ async function waitForImage(img, timeoutMs = 1800) {
   return img.complete && img.naturalWidth >= 4;
 }
 
+/**
+ * 等这一屏渲染稳定：块数量连续两次采样不变即认为到位。
+ *
+ * 为什么不能用固定 sleep：重型块首次挂载要 300~600ms，轻块 30ms 就够，
+ * 写死 400/450ms 等于「快的等慢的」，整篇采集有一半时间在空等。
+ * 也不能用 requestAnimationFrame —— 后台标签页不触发，会永久卡住。
+ */
+async function settleViewport({ min = 120, max = 700, stable = 2 } = {}) {
+  const start = Date.now();
+  let last = -1;
+  let same = 0;
+  while (Date.now() - start < max) {
+    const n = document.querySelectorAll('[data-block-id]').length;
+    if (n === last) same += 1;
+    else {
+      same = 0;
+      last = n;
+    }
+    if (Date.now() - start >= min && same >= stable) return;
+    await sleep(50);
+  }
+}
+
 async function warmUpScroll(scroller, onProgress) {
   const step = Math.max(240, Math.floor(scroller.clientHeight * 0.5));
   let y = 0;
@@ -592,11 +583,12 @@ async function warmUpScroll(scroller, onProgress) {
   await sleep(500);
 }
 
-async function scanPass(scroller, state, onProgress) {
+async function scanPass(scroller, state, onProgress, opts = {}) {
+  const { stepRatio = 0.7, minStep = 260, minWait = 400, maxWait = 700, initial = 700 } = opts;
   scroller.scrollTop = 0;
-  await sleep(700);
+  await sleep(initial);
 
-  const step = Math.max(260, Math.floor(scroller.clientHeight * 0.7));
+  const step = Math.max(minStep, Math.floor(scroller.clientHeight * stepRatio));
   let y = 0;
   let guard = 0;
 
@@ -610,7 +602,7 @@ async function scanPass(scroller, state, onProgress) {
     }
 
     scroller.scrollTop = y;
-    await sleep(400);
+    await settleViewport({ min: minWait, max: maxWait });
     onProgress?.({ stage: 'scroll', loaded: Math.min(y, total), total });
     const scrollBase = scroller.scrollTop;
 

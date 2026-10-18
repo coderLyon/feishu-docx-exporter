@@ -27,10 +27,11 @@ function fitImage(width, height, maxWidthPx) {
   return { width: Math.round(width * scale), height: Math.round(height * scale) };
 }
 
-function imageParagraph(resource, ctx, caption) {
-  // 宽截图塞进竖版会被压扁 —— 标记横页节（build.js 会据此分节）
+function imageParagraph(resource, ctx, caption, { allowLandscape = false } = {}) {
+  // 只有「宽表格截图」才配横页；普通插图即便很宽也不该把整篇文档切成横的
+  // （实测：无条件判定会把 845 块文档切成 11 节、5 个横向页）
   const contentPx = (ctx.pageContentWidth ?? 10106) / 15;
-  const isWide = (resource?.width ?? 0) > contentPx * 1.15;
+  const isWide = allowLandscape && (resource?.width ?? 0) > contentPx * 1.15;
   const markWide = (el) => {
     if (isWide && el) el.__fdeLandscape = true;
     return el;
@@ -460,7 +461,7 @@ export function renderSheet(node, ctx) {
   }
 
   if (resource?.data) {
-    return imageParagraph(resource, ctx);
+    return imageParagraph(resource, ctx, null, { allowLandscape: true });
   }
 
   ctx.report.degraded.push(t('sheetAsLink', ctx.lang)());

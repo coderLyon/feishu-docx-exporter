@@ -113,6 +113,8 @@ export const DEFAULT_OPTIONS = {
   embeddedSheet: 'excel',
   // 附件以 OLE 文件对象嵌入（双击可用关联程序打开），默认关闭
   embedAttachments: true,
+  // 采集提速：两趟自适应等待（关掉则回到旧的慢速三步走）
+  fastCapture: true,
   pageSize: 'A4',
   pageMargin: 'normal',
   fontScheme: 'yahei',

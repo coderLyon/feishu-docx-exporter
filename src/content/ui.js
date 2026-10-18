@@ -65,7 +65,14 @@ export class ExportPanel {
   }
 
   setProgress(progress) {
-    this.state.progress = { ...this.state.progress, ...progress };
+    // 进度条只进不退：采集会跑两遍（第二遍补漏），若两遍都映射 20→38%
+    // 就会出现「跳回去」的观感，用户以为卡住了重新开始
+    const prev = this.state.progress?.percent ?? 0;
+    const next = { ...progress };
+    if (typeof next.percent === 'number' && next.percent < prev && prev < 100) {
+      next.percent = prev;
+    }
+    this.state.progress = { ...this.state.progress, ...next };
     if (this.state.mode === 'busy') this.render();
   }
 

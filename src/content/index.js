@@ -53,6 +53,7 @@ async function runExport(currentPanel, options) {
 
   try {
     const resources = await collectResources({
+      fastCapture: options.fastCapture !== false,
       onProgress: (info) => {
         if (!info?.total) return;
         const ratio = Math.max(0, Math.min(1, info.loaded / info.total));

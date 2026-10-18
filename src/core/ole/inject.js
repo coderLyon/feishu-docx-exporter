@@ -59,8 +59,12 @@ export async function injectOleObjects(blob, attachments) {
     });
     // 卡片式预览：长方形 + 类型徽标 + 文件名 + 大小（与飞书在线一致）
     let card = null;
+    if (att.preview?.length) {
+      // 调用方已提供预览图（离线/测试场景没有 canvas）
+      card = { bytes: att.preview, widthPt: att.widthPt ?? 360, heightPt: att.heightPt ?? 56 };
+    }
     try {
-      card = await makeFileCardPng(att.name, att.size ?? 0);
+      if (!card) card = await makeFileCardPng(att.name, att.size ?? 0);
     } catch {
       // 退化：只画类型图标
       try {

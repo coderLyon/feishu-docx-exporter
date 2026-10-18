@@ -34,6 +34,8 @@
       img.height = 56;
       row.appendChild(img);
       out.appendChild(row);
+      window.__cards = window.__cards || [];
+      window.__cards.push(bytes);
     }
     document.title = 'ready';
   </script>

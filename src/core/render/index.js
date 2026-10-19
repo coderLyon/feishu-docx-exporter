@@ -1,4 +1,5 @@
 /** 块类型分发器 + 渲染上下文 */
+import { startsNewOrderedInstance } from './list-instance.js';
 import { detectLang } from '../../shared/messages.js';
 import { t } from '../../shared/messages.js';
 import {
@@ -88,7 +89,7 @@ export function createRenderContext({
       for (const node of nodes ?? []) {
         if (!node) continue;
         if (node.type === 'ordered') {
-          if (!prevWasOrdered) {
+          if (startsNewOrderedInstance(node, prevWasOrdered)) {
             this.ordered.instance += 1;
             this.ordered.byLevel[level] = this.ordered.instance;
           }

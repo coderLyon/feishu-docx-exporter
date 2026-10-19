@@ -45,6 +45,8 @@ function indentFor(level) {
  */
 function styleIdFor(ctx) {
   if (ctx.quoteDepth > 0) return STYLE.quote;
+  // 标注块内的正文单独成类，便于用户只调标注块字号/行距
+  if (ctx.calloutDepth > 0) return STYLE.callout;
   if (ctx.tableDepth > 0) return STYLE.tableText;
   return STYLE.body;
 }
@@ -150,7 +152,7 @@ export function renderBullet(node, ctx, level = 0) {
       // 树深度从 1 开始，编号定义是 0 基 —— 不减 1 的话一级列表会套上二级样式（○、缩进 720）
       numbering: { reference: BULLET_REFERENCE, level: Math.max(0, level - 1), custom: true },
       indent: quoteListIndent(ctx, level),
-      style: styleIdFor(ctx),
+      style: ctx.quoteDepth > 0 ? STYLE.quote : STYLE.listBullet,
       alignment: alignOf(node.data),
     }),
     ...ctx.renderChildren(node.children, level + 1),
@@ -165,7 +167,7 @@ export function renderOrdered(node, ctx, level = 0, instance = ctx.ordered.insta
       children: runsToDocxChildren(runs),
       numbering: { reference: `fde-ordered-${instance}`, level },
       indent: quoteListIndent(ctx, level),
-      style: styleIdFor(ctx),
+      style: ctx.quoteDepth > 0 ? STYLE.quote : STYLE.listOrdered,
       alignment: alignOf(node.data),
     }),
     ...ctx.renderChildren(node.children, level + 1),
@@ -181,7 +183,7 @@ export function renderTodo(node, ctx, level = 0) {
   return [
     new Paragraph({
       children: [new TextRun({ text: done ? '☑ ' : '☐ ', bold: true }), ...children],
-      style: styleIdFor(ctx),
+      style: ctx.quoteDepth > 0 ? STYLE.quote : STYLE.todo,
       indent: indentFor(level),
     }),
     ...ctx.renderChildren(node.children, level + 1),
@@ -253,7 +255,10 @@ export function renderQuoteContainer(node, ctx, level = 0) {
 export function renderCallout(node, ctx, level = 0) {
   // 作者可能选了深色背景；照搬会让正文变成「深底深字」，打印一片黑 —— 统一提亮
   const fill = safeBackground(toHexColor(node.data?.background_color) ?? 'F5F6F7');
+  // 标注块内正文用 FdeCallout 样式（单独一类，便于统一调整）
+  ctx.calloutDepth = (ctx.calloutDepth ?? 0) + 1;
   const inner = ctx.renderChildren(node.children, level);
+  ctx.calloutDepth -= 1;
   const emoji = node.data?.emoji_value ? String(node.data.emoji_value) : '';
 
   return [

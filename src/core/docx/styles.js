@@ -21,6 +21,16 @@ export const STYLE = {
   // 自定义 id 会导致一个 pPr 里出现两个 pStyle（Word 会判定文档损坏并修复），
   // 因此改为覆盖内建样式本身，列表就只有一种样式
   list: 'ListParagraph',
+  /** 有序列表项（与正文分开，便于单独调整缩进/行距） */
+  listOrdered: 'FdeListOrdered',
+  /** 无序（项目符号）列表项 */
+  listBullet: 'FdeListBullet',
+  /** 待办列表项 */
+  todo: 'FdeTodo',
+  /** 标注块（高亮块）正文 */
+  callout: 'FdeCallout',
+  /** 附件名称 / 链接 */
+  attachment: 'FdeAttachment',
   // 引用直接挂到 Word 内建的「引用」样式（id=Quote），用户在样式面板里改它即可
   quote: 'Quote',
   code: 'FdeCode',
@@ -109,6 +119,37 @@ export function buildStyles(options) {
         id: STYLE.list,
         name: 'Fde 列表',
         run: { font: bodyFont, size: TYPO.body.size, color: BODY_INK },
+        paragraph: { spacing: spacing(0, 0) },
+      },
+      {
+        // 有序列表：与正文同版式，单独成类便于用户只调列表缩进
+        id: STYLE.listOrdered,
+        name: 'Fde 列表 有序',
+        basedOn: STYLE.body,
+        paragraph: { spacing: spacing(0, 0) },
+      },
+      {
+        id: STYLE.listBullet,
+        name: 'Fde 列表 项目符号',
+        basedOn: STYLE.body,
+        paragraph: { spacing: spacing(0, 0) },
+      },
+      {
+        id: STYLE.todo,
+        name: 'Fde 待办',
+        basedOn: STYLE.body,
+        paragraph: { spacing: spacing(0, 0) },
+      },
+      {
+        id: STYLE.callout,
+        name: 'Fde 标注块',
+        basedOn: STYLE.body,
+        paragraph: { spacing: spacing(0, 0) },
+      },
+      {
+        id: STYLE.attachment,
+        name: 'Fde 附件',
+        basedOn: STYLE.body,
         paragraph: { spacing: spacing(0, 0) },
       },
       {

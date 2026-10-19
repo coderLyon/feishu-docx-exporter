@@ -26,6 +26,11 @@
 | `FdeCode` | Fde 代码 | 代码块 | 20 / 10pt，Consolas | 1F2329 | 单倍 |
 | `FdeCaption` | Fde 题注 | **图片**题注（居中） | 18 / 9pt，斜体灰 | 646A73 | 单倍 |
 | `FdeCodeCaption` | Fde 代码标题 | **代码块**标题（左对齐） | 18 / 9pt，斜体灰 | 646A73 | 单倍 |
+| `FdeListOrdered` | Fde 列表 有序 | 有序列表项 | 继承 FdeBody | 1F2329 | 单倍 |
+| `FdeListBullet` | Fde 列表 项目符号 | 无序列表项 | 继承 FdeBody | 1F2329 | 单倍 |
+| `FdeTodo` | Fde 待办 | 待办项（☐ / ☑） | 继承 FdeBody | 1F2329 | 单倍 |
+| `FdeCallout` | Fde 标注块 | 标注块（高亮块）内正文 | 继承 FdeBody | 1F2329 | 单倍 |
+| `FdeAttachment` | Fde 附件 | 附件名称 / 链接 | 继承 FdeBody | 1F2329 | 单倍 |
 | `FdeTableText` | Fde 表格文字 | 表格单元格文字 | 21 / 10.5pt | 1F2329 | 单倍 |
 | `ListParagraph` | 列表段落 | 项目符号/编号列表 | 继承文档默认 | 1F2329 | 单倍 |
 

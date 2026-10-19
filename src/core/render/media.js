@@ -121,7 +121,7 @@ export function renderFile(node, ctx) {
             })
           : new TextRun({ text: `${name}${sizeKb}`, bold: true }),
       ],
-      style: STYLE.body,
+      style: STYLE.attachment,
     }),
   ];
 }

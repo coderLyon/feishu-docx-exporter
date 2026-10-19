@@ -80,6 +80,7 @@ export function buildStyles(options) {
     return {
       id: STYLE.heading(level),
       name: `heading ${level}`,
+      quickFormat: true,
       // 回车后自动变正文：否则新建的下一段仍是标题，必须手动改样式
       next: STYLE.body,
       run: { font: bodyFont, size: spec.size, bold: true, color: INK },
@@ -110,12 +111,14 @@ export function buildStyles(options) {
       {
         id: STYLE.title,
         name: '标题',
+        quickFormat: true,
         run: { font: bodyFont, size: 45, bold: true, color: INK },
         paragraph: { spacing: spacing(0, 240) },
       },
       {
         id: STYLE.body,
         name: '正文',
+        quickFormat: true,
         run: { font: bodyFont, size: TYPO.body.size, color: BODY_INK },
         paragraph: { spacing: spacing(TYPO.body.before, TYPO.body.after) },
       },
@@ -123,6 +126,7 @@ export function buildStyles(options) {
         // bullet / numbering 段落由 docx 自动应用，覆盖它以统一行距与字号
         id: STYLE.list,
         name: '列表',
+        quickFormat: true,
         run: { font: bodyFont, size: TYPO.body.size, color: BODY_INK },
         paragraph: { spacing: spacing(0, 0) },
       },
@@ -130,54 +134,63 @@ export function buildStyles(options) {
         // 有序列表：与正文同版式，单独成类便于用户只调列表缩进
         id: STYLE.listOrdered,
         name: '有序列表',
+        quickFormat: true,
         basedOn: STYLE.body,
         paragraph: { spacing: spacing(0, 0) },
       },
       {
         id: STYLE.listBullet,
         name: '无序列表',
+        quickFormat: true,
         basedOn: STYLE.body,
         paragraph: { spacing: spacing(0, 0) },
       },
       {
         id: STYLE.todo,
         name: '待办',
+        quickFormat: true,
         basedOn: STYLE.body,
         paragraph: { spacing: spacing(0, 0) },
       },
       {
         id: STYLE.callout,
         name: '标注块',
+        quickFormat: true,
         basedOn: STYLE.body,
         paragraph: { spacing: spacing(0, 0) },
       },
       {
         id: STYLE.attachment,
         name: '附件',
+        quickFormat: true,
         basedOn: STYLE.body,
         paragraph: { spacing: spacing(0, 0) },
       },
       {
         id: STYLE.sheetCell,
         name: '内嵌表格',
+        quickFormat: true,
         basedOn: STYLE.tableText,
         paragraph: { spacing: spacing(0, 0) },
       },
       {
         id: STYLE.image,
         name: '图片',
+        quickFormat: true,
         basedOn: STYLE.body,
         paragraph: { spacing: spacing(0, 0) },
       },
       {
         id: STYLE.tableText,
         name: '表格文字',
+        quickFormat: true,
         run: { font: bodyFont, size: TYPO.table.size, color: BODY_INK },
         paragraph: { spacing: spacing(0, 0) },
       },
       {
         id: STYLE.quote,
         name: '引用',
+        quickFormat: true,
         basedOn: STYLE.body,
         // 用户要求：引用正文与竖线保持同一颜色（值由 QUOTE_INK 统一控制）
         run: { font: bodyFont, size: TYPO.body.size, color: QUOTE_INK },
@@ -191,6 +204,7 @@ export function buildStyles(options) {
       {
         id: STYLE.code,
         name: '代码',
+        quickFormat: true,
         // eastAsia 也要写：代码块里常有中文注释，不写会回退宋体
         run: { font: MONO, size: 20, color: BODY_INK },
         paragraph: {
@@ -202,6 +216,7 @@ export function buildStyles(options) {
       {
         id: STYLE.codeCaption,
         name: '代码标题',
+        quickFormat: true,
         run: { font: bodyFont, size: 18, color: MUTED, italics: true },
         paragraph: {
           // 代码块标题也要跟着代码块走，不能单独留在页底
@@ -210,6 +225,7 @@ export function buildStyles(options) {
       {
         id: STYLE.caption,
         name: '题注',
+        quickFormat: true,
         run: { font: bodyFont, size: 18, color: MUTED, italics: true },
         paragraph: { spacing: spacing(40, 120), alignment: 'center' },
       },
@@ -220,6 +236,7 @@ export function buildStyles(options) {
       {
         id: STYLE.inlineCode,
         name: 'Fde 行内代码',
+        quickFormat: true,
         run: {
           font: MONO,
           color: BODY_INK,

@@ -79,6 +79,8 @@ export function buildStyles(options) {
     const spec = TYPO.heading[level];
     return {
       id: STYLE.heading(level),
+      // 样式库顺序：正文 → 各级标题 → 其他
+      uiPriority: 3 + level,
       name: `heading ${level}`,
       quickFormat: true,
       // 回车后自动变正文：否则新建的下一段仍是标题，必须手动改样式
@@ -110,6 +112,7 @@ export function buildStyles(options) {
     paragraphStyles: [
       {
         id: STYLE.title,
+        uiPriority: 11,
         name: '标题',
         quickFormat: true,
         run: { font: bodyFont, size: 45, bold: true, color: INK },
@@ -117,6 +120,7 @@ export function buildStyles(options) {
       },
       {
         id: STYLE.body,
+        uiPriority: 1,
         name: '正文',
         quickFormat: true,
         run: { font: bodyFont, size: TYPO.body.size, color: BODY_INK },
@@ -125,6 +129,7 @@ export function buildStyles(options) {
       {
         // bullet / numbering 段落由 docx 自动应用，覆盖它以统一行距与字号
         id: STYLE.list,
+        uiPriority: 19,
         name: '列表',
         quickFormat: true,
         run: { font: bodyFont, size: TYPO.body.size, color: BODY_INK },
@@ -133,6 +138,7 @@ export function buildStyles(options) {
       {
         // 有序列表：与正文同版式，单独成类便于用户只调列表缩进
         id: STYLE.listOrdered,
+        uiPriority: 23,
         name: '有序列表',
         quickFormat: true,
         basedOn: STYLE.body,
@@ -140,6 +146,7 @@ export function buildStyles(options) {
       },
       {
         id: STYLE.listBullet,
+        uiPriority: 24,
         name: '无序列表',
         quickFormat: true,
         basedOn: STYLE.body,
@@ -147,6 +154,7 @@ export function buildStyles(options) {
       },
       {
         id: STYLE.todo,
+        uiPriority: 29,
         name: '待办',
         quickFormat: true,
         basedOn: STYLE.body,
@@ -154,6 +162,7 @@ export function buildStyles(options) {
       },
       {
         id: STYLE.callout,
+        uiPriority: 30,
         name: '标注块',
         quickFormat: true,
         basedOn: STYLE.body,
@@ -161,6 +170,7 @@ export function buildStyles(options) {
       },
       {
         id: STYLE.attachment,
+        uiPriority: 31,
         name: '附件',
         quickFormat: true,
         basedOn: STYLE.body,
@@ -168,6 +178,7 @@ export function buildStyles(options) {
       },
       {
         id: STYLE.sheetCell,
+        uiPriority: 22,
         name: '内嵌表格',
         quickFormat: true,
         basedOn: STYLE.tableText,
@@ -175,6 +186,7 @@ export function buildStyles(options) {
       },
       {
         id: STYLE.image,
+        uiPriority: 25,
         name: '图片',
         quickFormat: true,
         basedOn: STYLE.body,
@@ -182,6 +194,7 @@ export function buildStyles(options) {
       },
       {
         id: STYLE.tableText,
+        uiPriority: 21,
         name: '表格文字',
         quickFormat: true,
         run: { font: bodyFont, size: TYPO.table.size, color: BODY_INK },
@@ -189,6 +202,7 @@ export function buildStyles(options) {
       },
       {
         id: STYLE.quote,
+        uiPriority: 20,
         name: '引用',
         quickFormat: true,
         basedOn: STYLE.body,
@@ -203,6 +217,7 @@ export function buildStyles(options) {
       },
       {
         id: STYLE.code,
+        uiPriority: 26,
         name: '代码',
         quickFormat: true,
         // eastAsia 也要写：代码块里常有中文注释，不写会回退宋体
@@ -215,6 +230,7 @@ export function buildStyles(options) {
       },
       {
         id: STYLE.codeCaption,
+        uiPriority: 27,
         name: '代码标题',
         quickFormat: true,
         run: { font: bodyFont, size: 18, color: MUTED, italics: true },
@@ -224,6 +240,7 @@ export function buildStyles(options) {
       },
       {
         id: STYLE.caption,
+        uiPriority: 28,
         name: '题注',
         quickFormat: true,
         run: { font: bodyFont, size: 18, color: MUTED, italics: true },
@@ -235,6 +252,7 @@ export function buildStyles(options) {
     characterStyles: [
       {
         id: STYLE.inlineCode,
+        uiPriority: 40,
         name: 'Fde 行内代码',
         quickFormat: true,
         run: {

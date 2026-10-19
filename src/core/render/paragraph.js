@@ -152,7 +152,8 @@ export function renderBullet(node, ctx, level = 0) {
       // 树深度从 1 开始，编号定义是 0 基 —— 不减 1 的话一级列表会套上二级样式（○、缩进 720）
       numbering: { reference: BULLET_REFERENCE, level: Math.max(0, level - 1), custom: true },
       indent: quoteListIndent(ctx, level),
-      style: ctx.quoteDepth > 0 ? STYLE.quote : STYLE.listBullet,
+      // 单元格里的列表要跟随表格字号，否则同一格内 10.5pt 与 12pt 混排
+      style: ctx.quoteDepth > 0 ? STYLE.quote : ctx.tableDepth > 0 ? STYLE.tableText : STYLE.listBullet,
       alignment: alignOf(node.data),
     }),
     ...ctx.renderChildren(node.children, level + 1),
@@ -167,7 +168,7 @@ export function renderOrdered(node, ctx, level = 0, instance = ctx.ordered.insta
       children: runsToDocxChildren(runs),
       numbering: { reference: `fde-ordered-${instance}`, level },
       indent: quoteListIndent(ctx, level),
-      style: ctx.quoteDepth > 0 ? STYLE.quote : STYLE.listOrdered,
+      style: ctx.quoteDepth > 0 ? STYLE.quote : ctx.tableDepth > 0 ? STYLE.tableText : STYLE.listOrdered,
       alignment: alignOf(node.data),
     }),
     ...ctx.renderChildren(node.children, level + 1),
@@ -183,7 +184,7 @@ export function renderTodo(node, ctx, level = 0) {
   return [
     new Paragraph({
       children: [new TextRun({ text: done ? '☑ ' : '☐ ', bold: true }), ...children],
-      style: ctx.quoteDepth > 0 ? STYLE.quote : STYLE.todo,
+      style: ctx.quoteDepth > 0 ? STYLE.quote : ctx.tableDepth > 0 ? STYLE.tableText : STYLE.todo,
       indent: indentFor(level),
     }),
     ...ctx.renderChildren(node.children, level + 1),

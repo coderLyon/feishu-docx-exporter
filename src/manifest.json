@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "飞书文档导出 Word",
-  "version": "1.2.4",
+  "version": "1.2.5",
   "description": "把飞书在线文档导出为高保真 Word(.docx)：完整还原排版、内嵌表格全量导出、默认去除水印。",
   "permissions": [
     "downloads",

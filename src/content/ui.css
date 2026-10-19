@@ -58,6 +58,13 @@
   border-bottom: 1px solid rgba(31, 35, 41, 0.06);
 }
 
+.fde-panel-ver {
+  margin-left: 6px;
+  font-size: 11px;
+  color: #a0a6ad;
+  font-weight: 400;
+}
+
 .fde-panel-title {
   font-size: 15px;
   font-weight: 600;

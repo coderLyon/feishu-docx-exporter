@@ -34,6 +34,11 @@ const entryPoints = {
 async function copyStatic() {
   await fs.mkdir(DIST, { recursive: true });
   await fs.copyFile(path.join(ROOT, 'src/manifest.json'), path.join(DIST, 'manifest.json'));
+  // 图标等静态资源
+  const iconsSrc = path.join(ROOT, 'src/icons');
+  if (await fs.stat(iconsSrc).then(() => true).catch(() => false)) {
+    await fs.cp(iconsSrc, path.join(DIST, 'icons'), { recursive: true });
+  }
 }
 
 if (watch) {

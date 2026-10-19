@@ -10,6 +10,14 @@ const STAGES = [
   { id: 'pack', label: '打包 docx' },
 ];
 
+const VERSION = (() => {
+  try {
+    return chrome.runtime.getManifest().version;
+  } catch {
+    return '';
+  }
+})();
+
 export class ExportPanel {
   /**
    * @param {HTMLElement} mount 挂载点
@@ -108,6 +116,7 @@ export class ExportPanel {
     return `<div class="fde-panel">
       <div class="fde-panel-head">
         <span class="fde-panel-title">导出为 Word</span>
+        <span class="fde-panel-ver">v${VERSION}</span>
         <button class="fde-close" data-act="close">✕</button>
       </div>
       <div class="fde-body">
@@ -172,6 +181,7 @@ export class ExportPanel {
     return `<div class="fde-panel">
       <div class="fde-panel-head">
         <span class="fde-panel-title">正在导出</span>
+        <span class="fde-panel-ver">v${VERSION}</span>
       </div>
       <div class="fde-body">
         <div class="fde-stages">
@@ -203,6 +213,7 @@ export class ExportPanel {
     return `<div class="fde-panel">
       <div class="fde-panel-head">
         <span class="fde-panel-title">导出完成</span>
+        <span class="fde-panel-ver">v${VERSION}</span>
         <button class="fde-close" data-act="close">✕</button>
       </div>
       <div class="fde-body">
@@ -247,6 +258,7 @@ export class ExportPanel {
     return `<div class="fde-panel">
       <div class="fde-panel-head">
         <span class="fde-panel-title">导出失败</span>
+        <span class="fde-panel-ver">v${VERSION}</span>
         <button class="fde-close" data-act="close">✕</button>
       </div>
       <div class="fde-body">

@@ -1,13 +1,14 @@
 {
   "manifest_version": 3,
   "name": "飞书文档导出 Word",
-  "version": "1.2.5",
+  "version": "1.2.6",
   "description": "把飞书在线文档导出为高保真 Word(.docx)：完整还原排版、内嵌表格全量导出、默认去除水印。",
   "permissions": [
     "downloads",
     "activeTab",
     "clipboardRead",
-    "debugger"
+    "debugger",
+    "notifications"
   ],
   "host_permissions": [
     "https://*.feishu.cn/*",
@@ -29,7 +30,11 @@
     }
   ],
   "action": {
-    "default_title": "飞书文档导出 Word"
+    "default_title": "飞书文档导出 Word",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png"
+    }
   },
   "commands": {
     "_execute_action": {
@@ -38,5 +43,11 @@
       },
       "description": "显示/隐藏导出面板"
     }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
   }
 }

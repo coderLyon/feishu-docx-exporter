@@ -28,14 +28,40 @@ chrome.runtime.onConnect.addListener((port) => {
 });
 
 /** 点击扩展图标 -> 显示/隐藏导出面板 */
+const FEISHU_PAGE = /^https://////(?:[a-z0-9-]+//.)*(?:feishu//.cn|larkoffice//.com)////i;
+
+/** 系统通知：点击图标但当前页面不可用时给出明确说明 */
+function notify(title, message) {
+  try {
+    chrome.notifications.create({
+      type: 'basic',
+      // 通知接口不接受相对路径，必须用扩展绝对 URL
+      iconUrl: chrome.runtime.getURL('icons/icon128.png'),
+      title,
+      message,
+      priority: 0,
+    });
+  } catch {
+    /* 通知失败不影响主流程 */
+  }
+}
+
 chrome.action.onClicked.addListener((tab) => {
   const port = ports.get(tab.id);
-  if (!port) {
-    // 页面还没注入脚本（通常是安装后未刷新页面）
-    flashBadge(tab.id);
+  if (port) {
+    port.postMessage({ type: 'toggle-panel' });
     return;
   }
-  port.postMessage({ type: 'toggle-panel' });
+
+  const url = tab?.url ?? '';
+  if (!FEISHU_PAGE.test(url)) {
+    // 非飞书页面：扩展没有注入内容脚本，明确告诉用户该去哪儿用
+    notify('请在飞书文档页面使用', '当前页面不是飞书文档。打开 feishu.cn 的文档（地址含 /docx/ 或 /wiki/）后，再点击一次图标。');
+    return;
+  }
+
+  // 飞书页面但没有内容脚本：可能是安装后未刷新，或当前不是文档页（云盘、表格等）
+  notify('暂时无法打开导出面板', '如果这是飞书文档页，请刷新页面后重试；如果当前是云盘、多维表格或日历等页面，请先打开具体文档。');
 });
 
 /** 等到下载真正完成后取回绝对路径（conflictAction 可能改写文件名） */

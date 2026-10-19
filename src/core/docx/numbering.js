@@ -46,9 +46,10 @@ export function buildNumbering(instances) {
     format: 'bullet',
     text: BULLET_TEXT[level % BULLET_TEXT.length],
     alignment: AlignmentType.START,
-    // 圆点左边缘必须与正文左边界对齐（用户要求）：left = hanging 时首行从 0 开始，
-    // 符号落在版心左边界上，正文从 left 处起排。逐级各进 240 twips。
-    style: { paragraph: { indent: { left: 240 * (level + 1), hanging: 240 } } },
+    // 圆点必须与「上文编号」同一条竖线：无序列表直接沿用有序列表的缩进
+    // （left = INDENTS[level]，hanging = 360），符号落在编号的位置、文字与编号后的文字对齐。
+    // 单独设成 left = hanging 会让圆点跑到版心最左侧，比上一级编号还靠左，看起来是错位的。
+    style: { paragraph: { indent: { left: INDENTS[level] ?? 720, hanging: 360 } } },
   }));
 
   // 标题多级编号：level n 的文本是 %1.%2.…%n+1.，由 Word 维护计数器

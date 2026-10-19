@@ -46,10 +46,11 @@ export function buildNumbering(instances) {
     format: 'bullet',
     text: BULLET_TEXT[level % BULLET_TEXT.length],
     alignment: AlignmentType.START,
-    // 圆点必须与「上文编号」同一条竖线：无序列表直接沿用有序列表的缩进
-    // （left = INDENTS[level]，hanging = 360），符号落在编号的位置、文字与编号后的文字对齐。
-    // 单独设成 left = hanging 会让圆点跑到版心最左侧，比上一级编号还靠左，看起来是错位的。
-    style: { paragraph: { indent: { left: INDENTS[level] ?? 720, hanging: 360 } } },
+    // 圆点落在「上一级编号正文」那一列，项目文字再往里进一档：
+    //   有序列表：编号在 INDENTS[level]-360，正文在 INDENTS[level]
+    //   无序列表：圆点在 INDENTS[level]（= 编号正文列），文字在 INDENTS[level]+360
+    // 这样圆点正好压在「3. 试验名称…」里「试」的位置，视觉上是从属于上一级。
+    style: { paragraph: { indent: { left: (INDENTS[level] ?? 720) + 360, hanging: 360 } } },
   }));
 
   // 标题多级编号：level n 的文本是 %1.%2.…%n+1.，由 Word 维护计数器

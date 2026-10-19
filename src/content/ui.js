@@ -151,9 +151,9 @@ export class ExportPanel {
         <div class="fde-group">
           <label class="fde-label">内嵌表格</label>
           <select class="fde-select" data-act="select" data-key="embeddedSheet">
-            <option value="excel" ${o.embeddedSheet === 'excel' ? 'selected' : ''}>导出为 Excel 对象（双击可编辑）</option>
-            <option value="image" ${o.embeddedSheet === 'image' ? 'selected' : ''}>导出为图片</option>
+            <option value="image" ${o.embeddedSheet === 'image' ? 'selected' : ''}>导出为图片（默认）</option>
             <option value="table" ${o.embeddedSheet === 'table' ? 'selected' : ''}>导出为可编辑表格</option>
+            <option value="excel" ${o.embeddedSheet === 'excel' ? 'selected' : ''}>导出为 Excel 对象（双击可编辑）</option>
           </select>
         </div>
         <p class="fde-hint">再次点击工具栏图标可收起面板；仅发送只读请求，不会修改文档。</p>

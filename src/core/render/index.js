@@ -96,7 +96,10 @@ export function createRenderContext({
           out.push(...renderOrdered(node, this, level, instance));
           prevWasOrdered = true;
         } else {
-          prevWasOrdered = false;
+          // 普通段落不打断有序列表的连续编号：飞书里列表项后的补充说明就是一个 text 块，
+          // 若在此处当作「列表结束」，后面的项会重开实例、编号从 1 重新开始
+          //（线上表现：1、2、3、然后又是 1、2、3…）。标题/表格/代码/引用/图片等仍会打断。
+          if (node.type !== 'text') prevWasOrdered = false;
           out.push(...renderNode(node, this, level));
         }
       }

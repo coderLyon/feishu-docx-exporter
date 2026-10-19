@@ -10,26 +10,6 @@
  * 失败一律回退，不阻塞导出。
  */
 
-/** 申请 debugger 权限（必须在用户手势里调用，例如点「开始导出」） */
-export async function requestDebuggerPermission() {
-  try {
-    const res = await chrome.runtime.sendMessage({ type: 'request-debugger' });
-    return Boolean(res?.ok);
-  } catch {
-    return false;
-  }
-}
-
-export async function ensureDebuggerPermission() {
-  try {
-    if (await hasDebuggerPermission()) return true;
-    const res = await chrome.runtime.sendMessage({ type: 'request-debugger' });
-    return Boolean(res?.ok);
-  } catch {
-    return false;
-  }
-}
-
 /**
  * 依次提取多张内嵌表的单元格数据。
  *

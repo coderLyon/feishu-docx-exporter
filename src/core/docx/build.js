@@ -46,6 +46,41 @@ async function cancelAttachmentHeadingNumbers(blob) {
   return zip.generateAsync({ type: 'blob', mimeType: DOCX_MIME });
 }
 
+
+/**
+ * 只把「本文档真正用到」的样式留在 Word 快速样式库里。
+ *
+ * Word 的样式库会列出所有带 <w:qFormat/> 的样式。如果不裁剪，像「标题 4-9」这类
+ * 文档里根本没用的标题，会带着多级编号进入样式库，预览显示成 "1.1.1.1.1.1.1.1" 之类的数字串，
+ * 看起来像乱码（实测就是这个现象）。
+ *
+ * 做法：读 document.xml 里实际引用的 pStyle / rStyle，逐个样式对比，未引用的去掉 qFormat。
+ * 注意保留 Normal（正文）——它不会被显式引用，但必须始终可用。
+ */
+async function pruneUnusedQuickStyles(blob) {
+  const zip = await JSZip.loadAsync(await blob.arrayBuffer());
+  const docFile = zip.file('word/document.xml');
+  const stylesFile = zip.file('word/styles.xml');
+  if (!docFile || !stylesFile) return blob;
+
+  const doc = await docFile.async('string');
+  const used = new Set([
+    ...[...doc.matchAll(/<w:pStyle w:val="([^"]+)"/g)].map((m) => m[1]),
+    ...[...doc.matchAll(/<w:rStyle w:val="([^"]+)"/g)].map((m) => m[1]),
+  ]);
+  // 正文始终保留在样式库中
+  used.add('Normal');
+
+  let styles = await stylesFile.async('string');
+  styles = styles.replace(/<w:style\b[^>]*w:styleId="([^"]+)"[^>]*>([\s\S]*?)<\/w:style>/g, (whole, id, body) => {
+    if (!body.includes('<w:qFormat/>')) return whole;
+    if (used.has(id)) return whole;
+    return whole.replace('<w:qFormat/>', '');
+  });
+  zip.file('word/styles.xml', styles);
+  return zip.generateAsync({ type: 'blob', mimeType: DOCX_MIME });
+}
+
 export async function buildDocx({ title, children, options, orderedInstances }) {
   const size = PAGE_SIZES[options.pageSize] ?? PAGE_SIZES.A4;
   const margin = PAGE_MARGINS[options.pageMargin] ?? PAGE_MARGINS.normal;
@@ -123,6 +158,7 @@ export async function buildDocx({ title, children, options, orderedInstances }) 
   });
 
   const blob = await Packer.toBlob(document);
-  return cancelAttachmentHeadingNumbers(blob);
+  const withHeadings = await cancelAttachmentHeadingNumbers(blob);
+  return pruneUnusedQuickStyles(withHeadings);
 }
 

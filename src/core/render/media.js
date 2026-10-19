@@ -57,7 +57,8 @@ function imageParagraph(resource, ctx, caption, { allowLandscape = false } = {})
   });
 
   // 飞书图片块默认居中
-  const result = [markWide(new Paragraph({ children: [run], alignment: AlignmentType.CENTER }))];
+  // 图片段落单独挂「图片」样式：导出后能一眼认出这是图片块
+  const result = [markWide(new Paragraph({ children: [run], alignment: AlignmentType.CENTER, style: STYLE.image }))];
   if (caption) {
     result.push(
       new Paragraph({

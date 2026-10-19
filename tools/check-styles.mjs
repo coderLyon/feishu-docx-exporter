@@ -80,12 +80,13 @@ check('A2', '标题段落未退回旧 HeadingN 样式', legacyHeadings === 0, `�
 
 // ---------- B 样式体系 ----------
 const REQUIRED = [
-  'FdeBody', 'FdeHeading1', 'FdeHeading2', 'FdeHeading3', 'FdeHeading4', 'FdeHeading5',
-  'FdeHeading6', 'FdeHeading7', 'FdeHeading8', 'FdeHeading9', 'FdeCode',
-  'FdeCaption', 'FdeCodeCaption', 'FdeTableText', 'FdeTitle', 'FdeInlineCode',
-  // 引用挂到 Word 内建「引用」（id=Quote），列表挂内建 ListParagraph：
-  // 这样用户在 Word 样式面板里直接改内置样式即可，不另造自定义 id
-  'Quote', 'ListParagraph',
+  // 内建样式：正文 / 标题 / 引用 / 题注 / 文档标题
+  'Normal', 'Title', 'Quote', 'Caption',
+  'FdeHeading1', 'FdeHeading2', 'FdeHeading3', 'FdeHeading4', 'FdeHeading5',
+  'FdeHeading6', 'FdeHeading7', 'FdeHeading8', 'FdeHeading9',
+  // 自定义样式：Word 无内建对应的类别
+  'FdeCode', 'FdeCodeCaption', 'FdeTableText', 'FdeSheetCell',
+  'FdeListOrdered', 'FdeListBullet', 'FdeTodo', 'FdeCallout', 'FdeAttachment', 'FdeImage',
 ];
 const defined = [...stylesXml.matchAll(/<w:style [^>]*w:styleId="([^"]+)"/g)].map((m) => m[1]);
 const missing = REQUIRED.filter((id) => !defined.includes(id));

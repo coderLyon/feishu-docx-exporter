@@ -15,7 +15,8 @@ import { FONT_SCHEMES, SINGLE_LINE, TYPO } from '../../shared/constants.js';
 
 /** 样式 id 常量：渲染层只引用这里，不写字面量 */
 export const STYLE = {
-  body: 'FdeBody',
+  // 正文直接用 Word 内建「正文」(Normal)：用户在样式面板看到的就是熟悉的「正文」
+  body: 'Normal',
   // 列表段落沿用 Word 内建的 ListParagraph id：
   // docx 对 bullet/numbering 段落会自动写 pStyle=ListParagraph，
   // 自定义 id 会导致一个 pPr 里出现两个 pStyle（Word 会判定文档损坏并修复），
@@ -34,11 +35,15 @@ export const STYLE = {
   // 引用直接挂到 Word 内建的「引用」样式（id=Quote），用户在样式面板里改它即可
   quote: 'Quote',
   code: 'FdeCode',
-  caption: 'FdeCaption',
+  // 图片题注用 Word 内建「题注」(Caption)
+  caption: 'Caption',
   // 代码块标题左对齐（飞书如此），图片题注才居中，两者不能共用一个样式
   codeCaption: 'FdeCodeCaption',
   tableText: 'FdeTableText',
-  title: 'FdeTitle',
+  /** 图片 / 画板：Word 无对应内建样式，单独一类便于统一调整 */
+  image: 'FdeImage',
+  // 文档标题用 Word 内建「标题」(Title)
+  title: 'Title',
   inlineCode: 'FdeInlineCode',
   heading: (level) => `FdeHeading${Math.min(9, Math.max(1, level))}`,
   // 内嵌表格单元格：字号/颜色跟随飞书单元格，允许 run 级直接格式
@@ -104,63 +109,69 @@ export function buildStyles(options) {
     paragraphStyles: [
       {
         id: STYLE.title,
-        name: 'Fde 文档标题',
+        name: '标题',
         run: { font: bodyFont, size: 45, bold: true, color: INK },
         paragraph: { spacing: spacing(0, 240) },
       },
       {
         id: STYLE.body,
-        name: 'Fde 正文',
+        name: '正文',
         run: { font: bodyFont, size: TYPO.body.size, color: BODY_INK },
         paragraph: { spacing: spacing(TYPO.body.before, TYPO.body.after) },
       },
       {
         // bullet / numbering 段落由 docx 自动应用，覆盖它以统一行距与字号
         id: STYLE.list,
-        name: 'Fde 列表',
+        name: '列表',
         run: { font: bodyFont, size: TYPO.body.size, color: BODY_INK },
         paragraph: { spacing: spacing(0, 0) },
       },
       {
         // 有序列表：与正文同版式，单独成类便于用户只调列表缩进
         id: STYLE.listOrdered,
-        name: 'Fde 列表 有序',
+        name: '有序列表',
         basedOn: STYLE.body,
         paragraph: { spacing: spacing(0, 0) },
       },
       {
         id: STYLE.listBullet,
-        name: 'Fde 列表 项目符号',
+        name: '无序列表',
         basedOn: STYLE.body,
         paragraph: { spacing: spacing(0, 0) },
       },
       {
         id: STYLE.todo,
-        name: 'Fde 待办',
+        name: '待办',
         basedOn: STYLE.body,
         paragraph: { spacing: spacing(0, 0) },
       },
       {
         id: STYLE.callout,
-        name: 'Fde 标注块',
+        name: '标注块',
         basedOn: STYLE.body,
         paragraph: { spacing: spacing(0, 0) },
       },
       {
         id: STYLE.attachment,
-        name: 'Fde 附件',
+        name: '附件',
         basedOn: STYLE.body,
         paragraph: { spacing: spacing(0, 0) },
       },
       {
         id: STYLE.sheetCell,
-        name: 'Fde 内嵌表格单元格',
+        name: '内嵌表格',
         basedOn: STYLE.tableText,
         paragraph: { spacing: spacing(0, 0) },
       },
       {
+        id: STYLE.image,
+        name: '图片',
+        basedOn: STYLE.body,
+        paragraph: { spacing: spacing(0, 0) },
+      },
+      {
         id: STYLE.tableText,
-        name: 'Fde 表格文字',
+        name: '表格文字',
         run: { font: bodyFont, size: TYPO.table.size, color: BODY_INK },
         paragraph: { spacing: spacing(0, 0) },
       },
@@ -179,7 +190,7 @@ export function buildStyles(options) {
       },
       {
         id: STYLE.code,
-        name: 'Fde 代码',
+        name: '代码',
         // eastAsia 也要写：代码块里常有中文注释，不写会回退宋体
         run: { font: MONO, size: 20, color: BODY_INK },
         paragraph: {
@@ -190,7 +201,7 @@ export function buildStyles(options) {
       },
       {
         id: STYLE.codeCaption,
-        name: 'Fde 代码标题',
+        name: '代码标题',
         run: { font: bodyFont, size: 18, color: MUTED, italics: true },
         paragraph: {
           // 代码块标题也要跟着代码块走，不能单独留在页底
@@ -198,7 +209,7 @@ export function buildStyles(options) {
       },
       {
         id: STYLE.caption,
-        name: 'Fde 题注',
+        name: '题注',
         run: { font: bodyFont, size: 18, color: MUTED, italics: true },
         paragraph: { spacing: spacing(40, 120), alignment: 'center' },
       },

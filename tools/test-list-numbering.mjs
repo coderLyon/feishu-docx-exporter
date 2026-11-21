@@ -17,8 +17,10 @@ assert.equal(startsNewOrderedInstance(n('ordered', '', 'auto'), null), true);
 const options = { ...DEFAULT_OPTIONS };
 const report = { errors: [], degraded: [] };
 const ctx = createRenderContext({ options, report, pageContentWidth: 10106 });
+const appendix = n('heading1', '　 附录测试');
+appendix.data.align = 'center';
 const root = n('page', '', null, [
-  n('heading1', '1. 测试标题'),
+  n('heading1', ' 1. 测试标题'),
   n('text', '正文段落'),
   n('ordered', '父级首项', '1', [
     n('bullet', '子级项目符号', null, [n('ordered', '第三级编号', '1')]),
@@ -33,12 +35,12 @@ const root = n('page', '', null, [
     n('text', '引用文字'),
     n('bullet', '引用一级', null, [n('bullet', '引用二级')]),
   ]),
-  n('heading1', '附录测试'),
+  appendix,
   n('ordered', '新组', 'auto'),
 ]);
 const children = renderNode(root, ctx);
 assert.deepEqual(report.errors, []);
-const blob = await buildDocx({ title: '文档标题', children, options });
+const blob = await buildDocx({ title: '　 文档标题', children, options });
 const zip = await JSZip.loadAsync(await blob.arrayBuffer());
 const [doc, styles, numbering] = await Promise.all(
   ['document', 'styles', 'numbering'].map((name) => zip.file(`word/${name}.xml`).async('string')),
@@ -48,11 +50,19 @@ const numId = (label) => para(label)?.match(/<w:numId w:val="(\d+)"/)?.[1];
 const level = (label) => para(label)?.match(/<w:ilvl w:val="(\d+)"/)?.[1];
 const style = (id) => new RegExp(`<w:style [^>]*w:styleId="${id}"[^>]*>[\\s\\S]*?</w:style>`).exec(styles)?.[0];
 
-assert.match(style('Normal'), /w:firstLineChars="200"/);
-for (const id of ['Title', 'FdeHeading1', 'FdeListOrdered', 'FdeListBullet', 'Quote', 'FdeTableText']) {
-  assert.doesNotMatch(style(id), /firstLineChars="200"|<w:basedOn w:val="Normal"/);
+assert.match(style('FdeBody'), /w:firstLineChars="200"/);
+assert.match(para('正文段落'), /w:val="FdeBody"/);
+assert.doesNotMatch(style('Normal'), /w:firstLine/);
+for (const id of ['Title', 'FdeHeading1']) {
+  assert.match(style(id), /<w:jc w:val="left"\/>/);
+  assert.match(style(id), /<w:ind w:left="0" w:firstLine="0"\/>/);
 }
+for (const id of ['Title', 'FdeHeading1', 'FdeListOrdered', 'FdeListBullet', 'Quote', 'FdeTableText']) {
+  assert.doesNotMatch(style(id), /firstLineChars="200"|<w:basedOn w:val="FdeBody"/);
+}
+assert.match(para('文档标题'), /w:val="Title"/);
 assert.match(para('测试标题'), /w:val="FdeHeading1"/);
+assert.doesNotMatch(para('附录测试'), /w:val="center"/);
 assert.equal(numId('附录测试'), '0');
 assert.ok(numId('父级首项'));
 assert.equal(numId('父级首项'), numId('父级末项'));

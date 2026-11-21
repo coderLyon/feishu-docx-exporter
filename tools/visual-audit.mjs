@@ -45,7 +45,6 @@ const setMode = (mode) =>
   cdp.eval(`(() => {
     const cur = JSON.parse(localStorage.getItem('fde-options') || '{}');
     cur.embeddedSheet = ${JSON.stringify(mode)};
-    cur.embedAttachments = true;
     localStorage.setItem('fde-options', JSON.stringify(cur));
     return cur.embeddedSheet;
   })()`);

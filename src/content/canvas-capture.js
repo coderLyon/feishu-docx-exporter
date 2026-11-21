@@ -1,5 +1,3 @@
-import { pageContentPx, useLandscapeImage } from '../shared/page-layout.js';
-
 const MAX_PIXELS = 8_000_000;
 const MAX_SIDE = 16_384;
 const MAX_TILES = 80;
@@ -230,47 +228,61 @@ async function stitchViewport(element, scroller, deadline) {
   }
 }
 
-async function encodeCapture({ canvas, width, height }, options, allowLandscape) {
-  const page = pageContentPx(options, allowLandscape && useLandscapeImage({ width, height }, options));
-  const scale = Math.min(1, page.width / width);
-  const sliceHeight = Math.floor(page.height / scale);
-  const resource = { mimeType: 'image/png', width, height };
-  if (height <= sliceHeight) {
-    const data = await pngBytes(canvas);
-    return data ? { ...resource, data } : null;
-  }
+/** 飞书长表的外层占整表高度，内部画布随文档滚动移动和重绘。 */
+async function stitchDocumentSheet(canvas, frame, wrapper, scroller, deadline) {
+  const view = canvas.getBoundingClientRect();
+  const extent = wrapper.getBoundingClientRect();
+  // 外框与画布之间有边框。画布在首尾位置的并集才是表格内容。
+  const height = Math.round(extent.height - frame.getBoundingClientRect().height + view.height);
+  const width = Math.round(view.width);
+  const { scrollTop, scrollLeft } = scroller;
+  const start = scrollTop + extent.top - clientRect(scroller).top;
+  return stitchTiles(width, height, width, Math.round(view.height), async (_, y) => {
+    scrollTo(scroller, scrollLeft, start + y);
+    await sleep(180);
+    const current = frame.querySelector('canvas.spreadsheet-canvas');
+    if (!wrapper.isConnected || !current || !painted(current)) return null;
+    const rect = current.getBoundingClientRect();
+    return {
+      image: current,
+      x: 0,
+      y: Math.round(frame.getBoundingClientRect().top - wrapper.getBoundingClientRect().top),
+      width: rect.width,
+      height: rect.height,
+    };
+  }, deadline);
+}
 
-  const parts = [];
-  for (let y = 0; y < height; y += sliceHeight) {
-    const partHeight = Math.min(height - y, sliceHeight);
-    const start = Math.round(y * canvas.height / height);
-    const end = Math.round((y + partHeight) * canvas.height / height);
-    if (start === end) continue;
-    const crop = canvas2d(canvas.width, end - start);
-    crop.getContext('2d').drawImage(canvas, 0, start, canvas.width, end - start, 0, 0, crop.width, crop.height);
-    const data = await pngBytes(crop);
-    if (!data) return null;
-    parts.push({ data, width, height: partHeight, mimeType: resource.mimeType });
-  }
-  return parts.length ? { ...resource, parts } : null;
+async function encodeCapture({ canvas, width, height }) {
+  const data = await pngBytes(canvas);
+  return data ? { data, width, height, mimeType: 'image/png' } : null;
 }
 
 /** 先读画布。需要时对块内滚动区域或整块的可见区域分片截图。 */
-export async function captureCanvasBlock(container, docScroller, { deadline, options, sheet }) {
-  const layers = layersIn(container);
-  if (!layers.length) return null;
+export async function captureCanvasBlock(container, docScroller, { deadline, sheet }) {
+  let layers;
   let canvas;
-  for (const wait of [0, 380, 850]) {
-    if (Date.now() >= deadline || !container.isConnected) return null;
+  // 虚拟滚动首次挂载的画布可能仍是占位尺寸。
+  for (const wait of [0, 180, 380, 850]) {
     if (wait) await sleep(wait);
-    canvas = layersIn(container).slice(0, 3).find(painted);
+    if (Date.now() >= deadline || !container.isConnected) return null;
+    layers = layersIn(container);
+    canvas = layers.slice(0, 3).find(painted);
     if (canvas) break;
   }
 
   const target = canvas ?? layers[0];
+  if (!target) return null;
   const scroller = localScroller(target, container, docScroller, sheet);
   const { scrollLeft, scrollTop } = docScroller;
   try {
+    const frame = sheet ? target.closest('.embed-spreadsheet') : null;
+    const wrapper = frame?.closest('.faster-wrapper');
+    if (wrapper && container.contains(wrapper) &&
+        wrapper.getBoundingClientRect().height > frame.getBoundingClientRect().height + EPSILON) {
+      const result = await stitchDocumentSheet(target, frame, wrapper, docScroller, deadline);
+      return result ? await encodeCapture(result) : null;
+    }
     if (canvas) {
       const rect = canvas.getBoundingClientRect();
       if (!scroller || (rect.width >= scroller.scrollWidth - EPSILON && rect.height >= scroller.scrollHeight - EPSILON)) {
@@ -279,11 +291,11 @@ export async function captureCanvasBlock(container, docScroller, { deadline, opt
         const output = paintOutput(width, height);
         output.draw(canvas, { x: 0, y: 0, width: canvas.width, height: canvas.height },
           { x: 0, y: 0, width, height });
-        return await encodeCapture({ canvas: output.canvas, width, height }, options, sheet);
+        return await encodeCapture({ canvas: output.canvas, width, height });
       }
       const result = await stitchLocal(canvas, scroller, deadline, true);
       if (result) {
-        const resource = await encodeCapture(result, options, sheet);
+        const resource = await encodeCapture(result);
         if (resource) return resource;
       }
     }
@@ -291,7 +303,7 @@ export async function captureCanvasBlock(container, docScroller, { deadline, opt
     const result = scroller
       ? await stitchLocal(target, scroller, deadline, false)
       : await stitchViewport(target, docScroller, deadline);
-    return result ? await encodeCapture(result, options, sheet) : null;
+    return result ? await encodeCapture(result) : null;
   } catch {
     return null;
   } finally {

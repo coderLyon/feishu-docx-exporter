@@ -42,7 +42,9 @@ export class ExportPanel {
 
   loadPersisted() {
     try {
-      return JSON.parse(localStorage.getItem('fde-options') ?? '{}');
+      const { embedImages, embedAttachments, ...options } =
+        JSON.parse(localStorage.getItem('fde-options') ?? '{}') ?? {};
+      return options;
     } catch {
       return {};
     }
@@ -123,15 +125,6 @@ export class ExportPanel {
         <button class="fde-close" data-act="close">✕</button>
       </div>
       <div class="fde-body">
-        <div class="fde-group">
-          <label class="fde-label">图片</label>
-          <div class="fde-row">
-            <div class="fde-seg">
-              <button data-act="opt" data-key="embedImages" data-value="1" class="${o.embedImages ? 'fde-on' : ''}">内嵌</button>
-              <button data-act="opt" data-key="embedImages" data-value="0" class="${!o.embedImages ? 'fde-on' : ''}">外链</button>
-            </div>
-          </div>
-        </div>
         <div class="fde-switch">
           <span>去除水印</span>
           <button class="fde-toggle ${o.removeWatermark ? 'fde-on' : ''}" data-act="toggle" data-key="removeWatermark"></button>
@@ -155,10 +148,6 @@ export class ExportPanel {
         <div class="fde-group">
           <label class="fde-label">字体</label>
           <select class="fde-select" data-act="select" data-key="fontScheme">${fontOptions}</select>
-        </div>
-        <div class="fde-switch">
-          <span>附件嵌入为文件对象</span>
-          <button class="fde-toggle ${o.embedAttachments ? 'fde-on' : ''}" data-act="toggle" data-key="embedAttachments"></button>
         </div>
         <div class="fde-group">
           <label class="fde-label">内嵌表格</label>
@@ -284,7 +273,7 @@ export class ExportPanel {
       const target = event.target.closest('[data-act]');
       if (!target) return;
       const action = target.dataset.act;
-      const { key, value } = target.dataset;
+      const { key } = target.dataset;
 
       if (action === 'close') {
         this.setVisible(false);
@@ -320,11 +309,6 @@ export class ExportPanel {
       }
       if (action === 'toggle') {
         const options = { ...this.state.options, [key]: !this.state.options[key] };
-        this.setState({ options });
-        return;
-      }
-      if (action === 'opt') {
-        const options = { ...this.state.options, [key]: value === '1' };
         this.setState({ options });
         return;
       }

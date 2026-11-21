@@ -15,8 +15,8 @@ import { FONT_SCHEMES, SINGLE_LINE, TYPO } from '../../shared/constants.js';
 
 /** 样式 id 常量：渲染层只引用这里，不写字面量 */
 export const STYLE = {
-  // 正文直接用 Word 内建「正文」(Normal)：用户在样式面板看到的就是熟悉的「正文」
-  body: 'Normal',
+  normal: 'Normal',
+  body: 'FdeBody',
   // 列表段落沿用 Word 内建的 ListParagraph id：
   // docx 对 bullet/numbering 段落会自动写 pStyle=ListParagraph，
   // 自定义 id 会导致一个 pPr 里出现两个 pStyle（Word 会判定文档损坏并修复），
@@ -65,6 +65,7 @@ function runFont(font) {
 }
 
 const spacing = (before = 0, after = 0) => ({ ...SINGLE_LINE, before, after });
+const flushLeft = { alignment: 'left', indent: { left: 0, firstLine: 0 } };
 
 /**
  * 生成 Document 的 styles 配置。
@@ -87,6 +88,7 @@ export function buildStyles(options) {
       next: STYLE.body,
       run: { font: bodyFont, size: spec.size, bold: true, color: INK },
       paragraph: {
+        ...flushLeft,
         outlineLevel: level - 1,
         spacing: spacing(spec.before, spec.after),
         // 编号绑定在**样式**上：用户手动套用「标题 N」即自动带出对应层级编号，
@@ -116,12 +118,18 @@ export function buildStyles(options) {
         name: '标题',
         quickFormat: true,
         run: { font: bodyFont, size: 45, bold: true, color: INK },
-        paragraph: { spacing: spacing(0, 240) },
+        paragraph: { ...flushLeft, spacing: spacing(0, 240) },
+      },
+      {
+        // Normal 是文档的默认样式。首行缩进只应用到正文段落。
+        id: STYLE.normal,
+        name: 'Normal',
       },
       {
         id: STYLE.body,
         uiPriority: 1,
-        name: '正文',
+        name: '正文（首行缩进）',
+        basedOn: STYLE.normal,
         quickFormat: true,
         run: { font: bodyFont, size: TYPO.body.size, color: BODY_INK },
         paragraph: {

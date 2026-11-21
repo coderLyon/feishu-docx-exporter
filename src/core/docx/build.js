@@ -20,7 +20,7 @@ import { PAGE_MARGINS, PAGE_SIZES } from '../../shared/constants.js';
  * 看起来像乱码（实测就是这个现象）。
  *
  * 做法：读 document.xml 里实际引用的 pStyle / rStyle，逐个样式对比，未引用的去掉 qFormat。
- * 注意保留 Normal（正文）——它不会被显式引用，但必须始终可用。
+ * 正文样式保留在快速样式库，方便继续添加正文。
  */
 async function pruneUnusedQuickStyles(blob) {
   const zip = await JSZip.loadAsync(await blob.arrayBuffer());
@@ -33,8 +33,7 @@ async function pruneUnusedQuickStyles(blob) {
     ...[...doc.matchAll(/<w:pStyle w:val="([^"]+)"/g)].map((m) => m[1]),
     ...[...doc.matchAll(/<w:rStyle w:val="([^"]+)"/g)].map((m) => m[1]),
   ]);
-  // 正文始终保留在样式库中
-  used.add('Normal');
+  used.add(STYLE.body);
 
   let styles = await stylesFile.async('string');
   styles = styles.replace(/<w:style\b[^>]*w:styleId="([^"]+)"[^>]*>([\s\S]*?)<\/w:style>/g, (whole, id, body) => {
@@ -55,7 +54,7 @@ export async function buildDocx({ title, children, options }) {
   const front = title
     ? [
         new Paragraph({
-          children: [new TextRun({ text: title })],
+          children: [new TextRun({ text: title.trimStart() })],
           style: STYLE.title,
         }),
       ]

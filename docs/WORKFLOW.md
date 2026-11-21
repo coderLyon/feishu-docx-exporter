@@ -41,7 +41,7 @@ npm run workflow -- login
 | `npm run workflow -- release --dry-run` | 跑完整验证和打包，查询 GitHub 上的同版本 Release。有安装包时下载并比较内容。 |
 | `npm run workflow -- version 1.3.1` | 同步 npm 和 Chrome 扩展的版本号。更新日志记录在 `docs/CHANGELOG.md`。 |
 
-真实验证会使用飞书 CLI 获取标题和资源数量，再与扩展实际下载的 Word 文件核对。LibreOffice 会尝试打开该文件并生成 PDF。默认通过无界面的 Chrome 执行，添加 `--headed` 可观察浏览器画面。Windows 版 Word 中的 Excel 对象激活可使用项目已有的 Office 验证脚本。
+真实验证会使用飞书 CLI 获取标题和资源数量，再与扩展实际下载的 Word 文件核对。验证同时检查标题缩进、每张图片的版心尺寸、附件对象和从点击到完成的用时。LibreOffice 会打开文件并生成 PDF。默认通过无界面的 Chrome 执行，添加 `--headed` 可观察浏览器画面。Windows 版 Word 中的 Excel 对象激活可使用项目已有的 Office 验证脚本。
 
 每次运行会生成自己的目录，其中包含 `workflow.json`、本次构建、可用的验证 DOCX 和 PDF，以及安装包。失败时查看 `workflow.json` 的阶段和错误。请在重试前保留本次产物，方便对比。
 

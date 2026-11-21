@@ -81,7 +81,7 @@ check('A2', '标题段落未退回旧 HeadingN 样式', legacyHeadings === 0, `�
 // ---------- B 样式体系 ----------
 const REQUIRED = [
   // 内建样式：正文 / 标题 / 引用 / 题注 / 文档标题
-  'Normal', 'Title', 'Quote', 'Caption',
+  'Normal', 'FdeBody', 'Title', 'Quote', 'Caption',
   'FdeHeading1', 'FdeHeading2', 'FdeHeading3', 'FdeHeading4', 'FdeHeading5',
   'FdeHeading6', 'FdeHeading7', 'FdeHeading8', 'FdeHeading9',
   // 自定义样式：Word 无内建对应的类别

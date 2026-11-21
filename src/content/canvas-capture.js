@@ -29,18 +29,26 @@ function paintOutput(width, height) {
   const scale = pixelScale(width, height);
   const canvas = canvas2d(Math.max(1, Math.floor(width * scale)), Math.max(1, Math.floor(height * scale)));
   const context = canvas.getContext('2d');
+  const scaleX = canvas.width / width;
+  const scaleY = canvas.height / height;
+  context.fillStyle = '#fff';
+  context.fillRect(0, 0, canvas.width, canvas.height);
 
   return {
     canvas,
-    draw(image, source, target) {
-      const left = Math.round(target.x * canvas.width / width);
-      const top = Math.round(target.y * canvas.height / height);
-      const right = Math.round((target.x + target.width) * canvas.width / width);
-      const bottom = Math.round((target.y + target.height) * canvas.height / height);
+    draw(frame, target) {
+      const left = Math.round(target.left * scaleX);
+      const top = Math.round(target.top * scaleY);
+      const right = Math.round(target.right * scaleX);
+      const bottom = Math.round(target.bottom * scaleY);
       if (right <= left || bottom <= top) return;
-      context.fillStyle = '#fff';
-      context.fillRect(left, top, right - left, bottom - top);
-      context.drawImage(image, source.x, source.y, source.width, source.height, left, top, right - left, bottom - top);
+      // 整片沿用同一缩放比例，裁剪线落在共同的输出像素网格上。
+      context.save();
+      context.beginPath();
+      context.rect(left, top, right - left, bottom - top);
+      context.clip();
+      context.drawImage(frame.image, frame.x * scaleX, frame.y * scaleY, frame.width * scaleX, frame.height * scaleY);
+      context.restore();
     },
   };
 }
@@ -94,47 +102,32 @@ function clientRect(el) {
   };
 }
 
-/** 末片贴住内容末端。绘制时只取此前瓦片未覆盖的位置。 */
-function tileStarts(length, viewport) {
+/** 末片贴住内容末端，在相邻片段的重叠区中央裁切。 */
+function tileSpans(length, viewport) {
   const end = Math.max(0, length - viewport);
   const step = Math.max(1, Math.floor(viewport * 0.8));
   if (Math.ceil(end / step) >= MAX_TILES) return null;
   const offsets = [0];
   while (offsets.at(-1) < end) offsets.push(Math.min(end, offsets.at(-1) + step));
-  return offsets;
+  const cuts = offsets.slice(1).map((offset, i) => Math.round((offset + offsets[i] + viewport) / 2));
+  return offsets.map((offset, i) => ({ offset, start: cuts[i - 1] ?? 0, end: cuts[i] ?? length }));
 }
 
 async function stitchTiles(width, height, viewWidth, viewHeight, readTile, deadline) {
   if (Math.min(width, height, viewWidth, viewHeight) < 20) return null;
-  const xs = tileStarts(width, viewWidth);
-  const ys = tileStarts(height, viewHeight);
+  const xs = tileSpans(width, viewWidth);
+  const ys = tileSpans(height, viewHeight);
   if (!xs || !ys || xs.length * ys.length > MAX_TILES) return null;
 
   const output = paintOutput(width, height);
-  for (let row = 0; row < ys.length; row += 1) {
-    const y = ys[row];
-    const top = row ? ys[row - 1] + viewHeight : 0;
-    for (let col = 0; col < xs.length; col += 1) {
+  for (const row of ys) {
+    for (const col of xs) {
       if (Date.now() > deadline) return null;
-      const x = xs[col];
-      const left = col ? xs[col - 1] + viewWidth : 0;
-      const target = {
-        x: left, y: top,
-        width: Math.min(width, x + viewWidth) - left,
-        height: Math.min(height, y + viewHeight) - top,
-      };
-      const frame = await readTile(x, y);
+      const frame = await readTile(col.offset, row.offset);
       if (!frame) return null;
-      const sx = frame.image.width / frame.width;
-      const sy = frame.image.height / frame.height;
-      const dx = target.x - frame.x;
-      const dy = target.y - frame.y;
-      if (dx < -EPSILON || dy < -EPSILON ||
-          dx + target.width > frame.width + EPSILON || dy + target.height > frame.height + EPSILON) return null;
-      output.draw(frame.image, {
-        x: Math.max(0, dx * sx), y: Math.max(0, dy * sy),
-        width: target.width * sx, height: target.height * sy,
-      }, target);
+      if (col.start < frame.x - EPSILON || col.end > frame.x + frame.width + EPSILON ||
+          row.start < frame.y - EPSILON || row.end > frame.y + frame.height + EPSILON) return null;
+      output.draw(frame, { left: col.start, right: col.end, top: row.start, bottom: row.end });
     }
   }
   return { canvas: output.canvas, width, height };
@@ -168,7 +161,7 @@ function clipScreenshot(image, rect) {
   const scaleY = image.height / innerHeight;
   const crop = canvas2d(Math.round(rect.width * scaleX), Math.round(rect.height * scaleY));
   crop.getContext('2d').drawImage(image, rect.left * scaleX, rect.top * scaleY,
-    crop.width, crop.height, 0, 0, crop.width, crop.height);
+    rect.width * scaleX, rect.height * scaleY, 0, 0, crop.width, crop.height);
   return crop;
 }
 
@@ -229,28 +222,38 @@ async function stitchViewport(element, scroller, deadline) {
 }
 
 /** 飞书长表的外层占整表高度，内部画布随文档滚动移动和重绘。 */
-async function stitchDocumentSheet(canvas, frame, wrapper, scroller, deadline) {
-  const view = canvas.getBoundingClientRect();
-  const extent = wrapper.getBoundingClientRect();
-  // 外框与画布之间有边框。画布在首尾位置的并集才是表格内容。
-  const height = Math.round(extent.height - frame.getBoundingClientRect().height + view.height);
-  const width = Math.round(view.width);
-  const { scrollTop, scrollLeft } = scroller;
-  const start = scrollTop + extent.top - clientRect(scroller).top;
-  return stitchTiles(width, height, width, Math.round(view.height), async (_, y) => {
-    scrollTo(scroller, scrollLeft, start + y);
-    await sleep(180);
-    const current = frame.querySelector('canvas.spreadsheet-canvas');
-    if (!wrapper.isConnected || !current || !painted(current)) return null;
-    const rect = current.getBoundingClientRect();
-    return {
-      image: current,
-      x: 0,
-      y: Math.round(frame.getBoundingClientRect().top - wrapper.getBoundingClientRect().top),
-      width: rect.width,
-      height: rect.height,
-    };
-  }, deadline);
+async function stitchDocumentSheet(frame, wrapper, scroller, deadline) {
+  // 首次滚动可能触发表格行高重算。尺寸有变化时按新范围重拍。
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const view = frame.querySelector('canvas.spreadsheet-canvas')?.getBoundingClientRect();
+    if (!view || !wrapper.isConnected) return null;
+    const extent = wrapper.getBoundingClientRect();
+    // 外框与画布之间有边框。画布在首尾位置的并集才是表格内容。
+    const height = Math.round(extent.height - frame.getBoundingClientRect().height + view.height);
+    const width = Math.round(view.width);
+    const { scrollTop, scrollLeft } = scroller;
+    const start = scrollTop + extent.top - clientRect(scroller).top;
+    let resized = false;
+    const result = await stitchTiles(width, height, width, Math.round(view.height), async (_, y) => {
+      scrollTo(scroller, scrollLeft, start + y);
+      await sleep(180);
+      const current = frame.querySelector('canvas.spreadsheet-canvas');
+      if (!wrapper.isConnected || !current) return null;
+      const bounds = wrapper.getBoundingClientRect();
+      resized = Math.abs(bounds.height - extent.height) > EPSILON || Math.abs(bounds.width - extent.width) > EPSILON;
+      if (resized || !painted(current)) return null;
+      const rect = current.getBoundingClientRect();
+      return {
+        image: current,
+        x: 0,
+        y: Math.round(frame.getBoundingClientRect().top - bounds.top),
+        width: rect.width,
+        height: rect.height,
+      };
+    }, deadline);
+    if (!resized) return result;
+  }
+  return null;
 }
 
 async function encodeCapture({ canvas, width, height }) {
@@ -280,7 +283,7 @@ export async function captureCanvasBlock(container, docScroller, { deadline, she
     const wrapper = frame?.closest('.faster-wrapper');
     if (wrapper && container.contains(wrapper) &&
         wrapper.getBoundingClientRect().height > frame.getBoundingClientRect().height + EPSILON) {
-      const result = await stitchDocumentSheet(target, frame, wrapper, docScroller, deadline);
+      const result = await stitchDocumentSheet(frame, wrapper, docScroller, deadline);
       return result ? await encodeCapture(result) : null;
     }
     if (canvas) {
@@ -289,8 +292,7 @@ export async function captureCanvasBlock(container, docScroller, { deadline, she
         const width = Math.round(rect.width);
         const height = Math.round(rect.height);
         const output = paintOutput(width, height);
-        output.draw(canvas, { x: 0, y: 0, width: canvas.width, height: canvas.height },
-          { x: 0, y: 0, width, height });
+        output.draw({ image: canvas, x: 0, y: 0, width, height }, { left: 0, top: 0, right: width, bottom: height });
         return await encodeCapture({ canvas: output.canvas, width, height });
       }
       const result = await stitchLocal(canvas, scroller, deadline, true);

@@ -73,6 +73,15 @@ try {
     ctx.fillStyle = '#00f';
     ctx.fillRect(0, 860, 520, 860);
 
+    // 虚拟画布在滚动边缘会画出不属于原表的裁切线。
+    const markClippedEdges = (pen, x, y, w, h, fullWidth, fullHeight) => {
+      pen.fillStyle = '#f0f';
+      if (x > 0) pen.fillRect(0, 0, 8, h);
+      if (y > 0) pen.fillRect(0, 0, w, 8);
+      if (x + w < fullWidth) pen.fillRect(w - 8, 0, 8, h);
+      if (y + h < fullHeight) pen.fillRect(0, h - 8, w, 8);
+    };
+
     const grid = document.querySelector('#grid');
     const sheetCanvas = grid.querySelector('canvas');
     sheetCanvas.width = grid.clientWidth;
@@ -86,6 +95,7 @@ try {
         pen.fillStyle = color;
         pen.fillRect(left - x, top - y, 480, 1350);
       }
+      markClippedEdges(pen, x, y, sheetCanvas.width, sheetCanvas.height, grid.scrollWidth, grid.scrollHeight);
     };
     grid.addEventListener('scroll', paint);
     grid.scrollTo(17, 22);
@@ -96,15 +106,20 @@ try {
     const frame = wrapper.firstElementChild;
     const virtualCanvas = frame.firstElementChild;
     virtualCanvas.height = scroller.clientHeight;
+    wrapper.style.height = '1872px';
     const paintVirtualSheet = () => {
-      const offset = Math.max(0, Math.min(1900 - virtualCanvas.height,
-        Math.round(scroller.getBoundingClientRect().top - wrapper.getBoundingClientRect().top)));
+      const displacement = Math.round(scroller.getBoundingClientRect().top - wrapper.getBoundingClientRect().top);
+      // 模拟真实表格在第一次向下滚动时补算行高。
+      if (displacement > 0) wrapper.style.height = '1902px';
+      const height = wrapper.clientHeight - 2;
+      const offset = Math.max(0, Math.min(height - virtualCanvas.height, displacement));
       frame.style.top = `${offset}px`;
       const pen = virtualCanvas.getContext('2d');
       for (const [top, height, color] of [[0, 700, '#f00'], [700, 720, '#0f0'], [1420, 480, '#00f']]) {
         pen.fillStyle = color;
         pen.fillRect(0, top - offset, virtualCanvas.width, height);
       }
+      markClippedEdges(pen, 0, offset, virtualCanvas.width, virtualCanvas.height, virtualCanvas.width, height);
     };
     scroller.addEventListener('scroll', paintVirtualSheet);
     scroller.scrollTop = 97;
@@ -129,6 +144,7 @@ try {
     if (!capturedBoard) throw new Error('真实结构的画板未归到文档块');
     const data = [{ size: [capturedBoard.width, capturedBoard.height],
       first: await sample(capturedBoard, 15, 15), last: await sample(capturedBoard, 504, 1704) }];
+    const seams = {};
     for (const [container, sheet] of [[document.querySelector('#fallback'), false], [grid.parentElement, true], [virtualSheet, true]]) {
       if (container === virtualSheet) {
         virtualCanvas.width = 1;
@@ -144,11 +160,15 @@ try {
         first: await sample(resource, 15, 15),
         last: await sample(resource, resource.width - 16, resource.height - 16),
       });
+      if (container === grid.parentElement) {
+        seams.grid = await Promise.all([[406, 30], [30, 266], [406, 266]].map(([x, y]) => sample(resource, x, y)));
+      }
       if (container === virtualSheet) {
         data.at(-1).middle = await sample(resource, 15, 1100);
+        seams.virtualSheet = await Promise.all([556, 1004, 1452].map((y) => sample(resource, 130, y)));
       }
     }
-    return { data, scroll: [scroller.scrollTop, grid.scrollLeft, grid.scrollTop] };
+    return { data, seams, scroll: [scroller.scrollTop, grid.scrollLeft, grid.scrollTop] };
   });
   assert.deepEqual(result.data, [
     { size: [520, 1720], first: [0, 255, 0, 255], last: [0, 0, 255, 255] },
@@ -156,8 +176,12 @@ try {
     { size: [960, 2700], first: [255, 0, 0, 255], last: [255, 255, 0, 255] },
     { size: [550, 1900], first: [255, 0, 0, 255], middle: [0, 255, 0, 255], last: [0, 0, 255, 255] },
   ]);
+  assert.deepEqual(result.seams, {
+    grid: [[255, 0, 0, 255], [255, 0, 0, 255], [255, 0, 0, 255]],
+    virtualSheet: [[255, 0, 0, 255], [0, 255, 0, 255], [0, 0, 255, 255]],
+  });
   assert.deepEqual(result.scroll, [97, 17, 22]);
-  console.log('完整画板、视口拼接、双轴表格、随文档滚动重绘的长表和滚动恢复通过 Chromium 回归测试');
+  console.log('完整画板、视口拼接、双轴表格、长表行高重绘、拼接处像素和滚动恢复通过 Chromium 回归测试');
 } finally {
   await browser.close();
 }

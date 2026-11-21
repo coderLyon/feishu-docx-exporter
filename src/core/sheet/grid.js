@@ -43,7 +43,7 @@ export function parseStyleDecl(style) {
 
 /**
  * @param {string} html 剪贴板 text/html
- * @param {{maxCols?: number}} [opts]
+ * @param {{maxCols?: number, maxRows?: number}} [opts]
  * @returns {null | {
  *   rowCount:number, colCount:number, colsPx:number[],
  *   cells:Array<{r:number,c:number,rowSpan:number,colSpan:number,text:string,
@@ -53,42 +53,37 @@ export function parseStyleDecl(style) {
  *   covered:Set<string>, hasBorder:boolean
  * }}
  */
-export function parseSheetHtml(html, { maxCols = 100 } = {}) {
+export function parseSheetHtml(html, { maxCols = 100, maxRows = 500 } = {}) {
   if (!html || typeof DOMParser === 'undefined') return null;
   const doc = new DOMParser().parseFromString(html, 'text/html');
   const tableEl = doc.querySelector('table');
   if (!tableEl) return null;
 
-  const trEls = [...tableEl.querySelectorAll('tr')];
-  if (!trEls.length) return null;
+  const trEls = [...tableEl.rows];
+  if (!trEls.length || trEls.length > maxRows || tableEl.querySelector('table')) return null;
 
   const colEls = [...tableEl.querySelectorAll('colgroup col')];
-  const colCount = Math.max(
-    colEls.length,
-    ...trEls.map((tr) =>
-      [...tr.children].reduce((sum, td) => sum + (Number(td.getAttribute('colspan')) || 1), 0),
-    ),
-  );
-  if (!colCount || colCount > maxCols) return null;
-
-  const colsPx = colEls.map((c) => Number(c.getAttribute('width')) || 0).filter((w) => w > 0);
+  let colCount = colEls.length;
+  if (colCount > maxCols) return null;
+  const cssPixels = (value) => parseFloat(value) > 0 ? parseFloat(value) : 0;
+  const colsPx = colEls.map((col) => cssPixels(col.style.width || col.getAttribute('width')));
+  const rowsPx = trEls.map((row) => cssPixels(row.style.height || row.getAttribute('height')));
 
   const rows = trEls.length;
-  const occupied = Array.from({ length: rows }, () => new Array(colCount).fill(false));
-  const owner = Array.from({ length: rows }, () => new Array(colCount).fill(null));
+  const occupied = Array.from({ length: rows }, () => new Uint8Array(maxCols));
   const cells = [];
   const covered = new Set();
   let hasBorder = false;
 
-  trEls.forEach((tr, ri) => {
+  for (const [ri, tr] of trEls.entries()) {
     let ci = 0;
-    for (const td of [...tr.children]) {
-      if (td.tagName !== 'TD' && td.tagName !== 'TH') continue;
-      while (ci < colCount && occupied[ri][ci]) ci += 1;
-      if (ci >= colCount) break;
+    for (const td of tr.cells) {
+      while (ci < maxCols && occupied[ri][ci]) ci += 1;
 
-      const colSpan = Math.min(Number(td.getAttribute('colspan')) || 1, colCount - ci);
-      const rowSpan = Math.min(Number(td.getAttribute('rowspan')) || 1, rows - ri);
+      const colSpan = td.colSpan;
+      const rowSpan = td.rowSpan || rows - ri;
+      if (ci + colSpan > maxCols || ri + rowSpan > rows) return null;
+      colCount = Math.max(colCount, ci + colSpan);
       const decl = parseStyleDecl(td.getAttribute('style'));
 
       const bg = cssColorToHex(decl['background-color'] ?? decl.background ?? '');
@@ -102,7 +97,9 @@ export function parseSheetHtml(html, { maxCols = 100 } = {}) {
       const borderColor = cssColorToHex(borderMatch?.[1] ?? '');
       if (decl.border) hasBorder = true;
 
-      const text = (td.textContent ?? '').replace(/\u200b/g, '').replace(/\u00a0/g, ' ').trim();
+      const breaks = td.querySelectorAll('br');
+      for (const br of breaks) br.replaceWith('\n');
+      const text = (td.textContent ?? '').replace(/\u200b/g, '').replace(/\u00a0/g, ' ');
       const formatter = td.getAttribute('data-formatter') ?? '';
       const type = td.getAttribute('data-type') ?? '';
 
@@ -111,21 +108,21 @@ export function parseSheetHtml(html, { maxCols = 100 } = {}) {
 
       for (let r = ri; r < ri + rowSpan; r += 1) {
         for (let c = ci; c < ci + colSpan; c += 1) {
-          if (!occupied[r]) continue;
-          occupied[r][c] = true;
-          if (!owner[r][c]) owner[r][c] = start;
+          if (occupied[r][c]) return null;
+          occupied[r][c] = 1;
           if (r !== ri || c !== ci) covered.add(`${r},${c}`);
         }
       }
       ci += colSpan;
     }
-  });
+  }
+  if (!colCount || !cells.length) return null;
 
   const merges = cells
     .filter((c) => c.rowSpan > 1 || c.colSpan > 1)
     .map((c) => ({ r0: c.r, c0: c.c, r1: c.r + c.rowSpan - 1, c1: c.c + c.colSpan - 1 }));
 
-  return { rowCount: rows, colCount, colsPx, cells, merges, covered, hasBorder };
+  return { rowCount: rows, colCount, colsPx, rowsPx, cells, merges, covered, hasBorder };
 }
 
 /** 列字母：0 → A，26 → AA */
@@ -138,41 +135,4 @@ export function colLetter(index) {
     n = Math.floor((n - 1) / 26);
   }
   return s;
-}
-
-
-/**
- * TSV → 网格（无样式）。用于只拿到纯文本、拿不到 HTML 的降级场景：
- * 至少保证 Excel 对象里的**数值与结构**是对的，只是没有底色/字号。
- */
-export function gridFromTsv(tsv) {
-  const rows = String(tsv ?? '')
-    .replace(/\r\n/g, '\n')
-    .split('\n')
-    .filter((line, i, arr) => !(i === arr.length - 1 && line === ''));
-  if (!rows.length) return null;
-  const cells = [];
-  let colCount = 0;
-  rows.forEach((line, r) => {
-    const cols = line.split('\t');
-    colCount = Math.max(colCount, cols.length);
-    cols.forEach((text, c) => {
-      if (!text) return;
-      cells.push({
-        r, c, rowSpan: 1, colSpan: 1,
-        text: text.replace(/\u200b/g, '').trim(),
-        bg: null, color: null, sizePt: 10, bold: false,
-        align: 'left', borderColor: null, formatter: '', type: '',
-      });
-    });
-  });
-  return {
-    rowCount: rows.length,
-    colCount,
-    colsPx: [],
-    cells,
-    merges: [],
-    covered: new Set(),
-    hasBorder: true,
-  };
 }

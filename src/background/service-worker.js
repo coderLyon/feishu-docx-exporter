@@ -28,7 +28,7 @@ chrome.runtime.onConnect.addListener((port) => {
 });
 
 /** 点击扩展图标 -> 显示/隐藏导出面板 */
-const FEISHU_PAGE = /^https://////(?:[a-z0-9-]+//.)*(?:feishu//.cn|larkoffice//.com)////i;
+const FEISHU_PAGE = /^https:\/\/(?:[a-z0-9-]+\.)*(?:feishu\.cn|larkoffice\.com)(?:[:/]|$)/i;
 
 /** 系统通知：点击图标但当前页面不可用时给出明确说明 */
 function notify(title, message) {
@@ -184,18 +184,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message?.type === 'capture-region') {
-    // WebGL 画布无法通过 toDataURL 取出内容（默认不保留绘制缓冲），
-    // 这里截整屏，由 content script 按元素位置裁剪。
-    chrome.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl) => {
-      if (chrome.runtime.lastError || !dataUrl) {
-        sendResponse({
-          ok: false,
-          error: chrome.runtime.lastError?.message ?? '截图失败',
-        });
-      } else {
-        sendResponse({ ok: true, dataUrl });
-      }
-    });
+    const tabId = sender.tab?.id;
+    const windowId = sender.tab?.windowId;
+    (async () => {
+      const activeTab = async () => (await chrome.tabs.query({ active: true, windowId }))[0]?.id;
+      if (tabId == null || await activeTab() !== tabId) throw new Error('请保持导出标签页在前台');
+      const dataUrl = await chrome.tabs.captureVisibleTab(windowId, { format: 'png' });
+      if (await activeTab() !== tabId) throw new Error('截图期间切换了标签页');
+      return { ok: true, dataUrl };
+    })().then(sendResponse).catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
   }
 

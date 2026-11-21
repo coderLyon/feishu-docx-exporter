@@ -11,12 +11,12 @@
 import JSZip from 'jszip';
 import { buildOleBin } from './build.js';
 import { makeFileCardPng, makeIconPng } from './icon.js';
+import { esc } from './xlsx.js';
 
 /** 占位标记：渲染阶段写这段文字，后处理时整段替换成 OLE 对象 */
 export const OLE_MARKER = '\u0001FDE_OLE_';
 
-/** 内嵌表格（Excel 对象）的占位标记 */
-export const SHEET_MARKER = '\u0001FDE_XLSX_';
+export const sheetPreviewName = (index) => `FdeExcelPreview${index}`;
 
 /** docx 的 MIME，任何后处理都必须保持它，否则下载后缀会变成 .zip */
 export const DOCX_MIME =
@@ -142,7 +142,7 @@ function xlsxObjectXml({ shapeId, oleRelId, imgRelId, widthPt, heightPt, title }
 </v:shapetype>
 <v:shape id="${shapeId}" type="#_x0000_t75" style="width:${widthPt.toFixed(1)}pt;height:${heightPt.toFixed(1)}pt" o:ole="">
 <v:imagedata r:id="${imgRelId}" o:title="${title}"/></v:shape>
-<o:OLEObject Type="Embed" ProgID="Excel.Sheet.12" ShapeID="${shapeId}" DrawAspect="Icon" ObjectID="_${shapeId}" r:id="${oleRelId}"/>
+<o:OLEObject Type="Embed" ProgID="Excel.Sheet.12" ShapeID="${shapeId}" DrawAspect="Content" ObjectID="_${shapeId}" r:id="${oleRelId}"/>
 </w:object></w:r>`;
 }
 
@@ -150,11 +150,10 @@ function xlsxObjectXml({ shapeId, oleRelId, imgRelId, widthPt, heightPt, title }
  * 把内嵌表格以「Excel 对象」注入 docx。
  *
  * @param {Blob} blob Packer 产出
- * @param {Array<{index:number, bytes:Uint8Array, name:string,
- *   preview?:Uint8Array, widthPt:number, heightPt:number}>} sheets
+ * @param {Array<{index:number, bytes:Uint8Array, name:string, widthPt:number, heightPt:number}>} sheets
  */
 export async function injectXlsxObjects(blob, sheets) {
-  if (!sheets.length) return blob;
+  if (!sheets.length) return { blob, count: 0 };
 
   const zip = await JSZip.loadAsync(await blob.arrayBuffer());
   let doc = await zip.file('word/document.xml').async('string');
@@ -164,25 +163,18 @@ export async function injectXlsxObjects(blob, sheets) {
   const relAdds = [];
   for (const sh of sheets) {
     const n = sh.index;
-    const fileName = `Microsoft_Excel_Worksheet${n}.xlsx`;
-    zip.file(`word/embeddings/${fileName}`, sh.bytes);
-    // 已压缩过的 xlsx 不再二次压缩
-    zip.file(`word/media/fdexlsx${n}.png`, sh.preview ?? new Uint8Array([0]), { compression: 'STORE' });
-
-    const oleRel = `rIdFdeXlsx${n}`;
-    const imgRel = `rIdFdeXlsxImg${n}`;
-    relAdds.push(
-      `<Relationship Id="${oleRel}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/package" Target="embeddings/${fileName}"/>`,
-      `<Relationship Id="${imgRel}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/fdexlsx${n}.png"/>`,
-    );
-
-    const marker = `${SHEET_MARKER}${n}\u0001`;
-    const at = doc.indexOf(marker);
+    const at = doc.indexOf(`name="${sheetPreviewName(n)}"`);
     if (at < 0) continue;
     const pStart = Math.max(doc.lastIndexOf('<w:p ', at), doc.lastIndexOf('<w:p>', at));
     const pEnd = doc.indexOf('</w:p>', at) + '</w:p>'.length;
     const para = doc.slice(pStart, pEnd);
+    const imgRel = para.match(/<a:blip\b[^>]*\br:embed="([^"]+)"/)?.[1];
+    if (!imgRel) continue;
     const pPr = para.match(/<w:pPr>[\s\S]*?<\/w:pPr>/);
+    const fileName = `Microsoft_Excel_Worksheet${n}.xlsx`;
+    zip.file(`word/embeddings/${fileName}`, sh.bytes, { compression: 'STORE' });
+    const oleRel = `rIdFdeXlsx${n}`;
+    relAdds.push(`<Relationship Id="${oleRel}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/package" Target="embeddings/${fileName}"/>`);
     const shapeId = `fdeXlsxShape${n}`;
     doc =
       doc.slice(0, pStart) +
@@ -192,15 +184,14 @@ export async function injectXlsxObjects(blob, sheets) {
         imgRelId: imgRel,
         widthPt: sh.widthPt,
         heightPt: sh.heightPt,
-        title: sh.name ?? '',
+        title: esc(sh.name),
       })}</w:p>` +
       doc.slice(pEnd);
   }
 
-  if (relAdds.length) {
-    rels = rels.replace('</Relationships>', `${relAdds.join('')}</Relationships>`);
-    zip.file('word/_rels/document.xml.rels', rels);
-  }
+  if (!relAdds.length) return { blob, count: 0 };
+  rels = rels.replace('</Relationships>', `${relAdds.join('')}</Relationships>`);
+  zip.file('word/_rels/document.xml.rels', rels);
   if (!ct.includes('Extension="xlsx"')) {
     ct = ct.replace(
       '</Types>',
@@ -210,5 +201,8 @@ export async function injectXlsxObjects(blob, sheets) {
   }
   zip.file('word/document.xml', doc);
 
-  return zip.generateAsync({ type: 'blob', mimeType: DOCX_MIME, compression: 'DEFLATE' });
+  return {
+    blob: await zip.generateAsync({ type: 'blob', mimeType: DOCX_MIME, compression: 'DEFLATE' }),
+    count: relAdds.length,
+  };
 }

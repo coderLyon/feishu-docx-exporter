@@ -206,8 +206,10 @@ export async function buildXlsx(grid, opts = {}) {
   const rowXml = [];
   for (let r = 0; r < grid.rowCount; r += 1) {
     const list = (byRow.get(r) ?? []).sort((a, b) => a.c - b.c);
+    const rowHeight = grid.rowsPx?.[r];
+    const rowAttrs = rowHeight > 0 ? ` ht="${Math.min(409, rowHeight * 0.75).toFixed(2)}" customHeight="1"` : '';
     if (!list.length) {
-      rowXml.push(`<row r="${r + 1}"/>`);
+      rowXml.push(`<row r="${r + 1}"${rowAttrs}/>`);
       continue;
     }
     const cellsXml = list.map((cell) => {
@@ -218,13 +220,12 @@ export async function buildXlsx(grid, opts = {}) {
       if (inferred.kind === 'number') return `<c r="${addr}" s="${s}"><v>${inferred.value}</v></c>`;
       return `<c r="${addr}" s="${s}" t="inlineStr"><is><t xml:space="preserve">${esc(inferred.value)}</t></is></c>`;
     });
-    rowXml.push(`<row r="${r + 1}">${cellsXml.join('')}</row>`);
+    rowXml.push(`<row r="${r + 1}"${rowAttrs}>${cellsXml.join('')}</row>`);
   }
 
-  const colsXml = (grid.colsPx.length ? grid.colsPx : Array.from({ length: grid.colCount }, () => 80))
-    .slice(0, grid.colCount)
-    .map((px, i) => `<col min="${i + 1}" max="${i + 1}" width="${widthFromPx(px).toFixed(2)}" customWidth="1"/>`)
-    .join('');
+  const colsXml = Array.from({ length: grid.colCount }, (_, i) =>
+    `<col min="${i + 1}" max="${i + 1}" width="${widthFromPx(grid.colsPx[i] || 80).toFixed(2)}" customWidth="1"/>`,
+  ).join('');
 
   const mergesXml = grid.merges.length
     ? `<mergeCells count="${grid.merges.length}">${grid.merges

@@ -3,12 +3,15 @@ import styles from './ui.css';
 import { DEFAULT_OPTIONS, FONT_SCHEMES, PAGE_MARGINS, PAGE_SIZES } from '../shared/constants.js';
 
 const STAGES = [
-  { id: 'scroll', label: '渲染页面资源' },
   { id: 'resolve', label: '解析文档链接' },
   { id: 'fetch', label: '拉取块数据' },
+  { id: 'scroll', label: '采集页面资源' },
   { id: 'render', label: '渲染排版' },
   { id: 'pack', label: '打包 docx' },
 ];
+
+const HTML_ENTITIES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => HTML_ENTITIES[char]);
 
 const VERSION = (() => {
   try {
@@ -177,7 +180,7 @@ export class ExportPanel {
   busyHtml() {
     const { stage } = this.state.progress;
     const percent = Math.max(0, Math.min(100, Math.round(Number(this.state.progress.percent) || 0)));
-    const currentIndex = STAGES.findIndex((s) => s.id === stage);
+    const currentIndex = STAGES.findIndex((s) => s.id === (stage === 'collect' ? 'scroll' : stage));
     return `<div class="fde-panel">
       <div class="fde-panel-head">
         <span class="fde-panel-title">正在导出</span>
@@ -205,10 +208,12 @@ export class ExportPanel {
     const degraded = result?.report?.degraded ?? [];
     const errors = result?.report?.errors ?? [];
     const stats = result?.stats;
+    const excelCount = result?.report?.excelObjects ?? 0;
     const statText = stats
-      ? `共 ${stats.blocks} 个块 · 图片 ${stats.images} · 表格截图 ${stats.sheets} · 画板 ${stats.whiteboards}`
+      ? `共 ${stats.blocks} 个块 · 图片 ${stats.images} · 内嵌表格 ${stats.sheets} · 画板 ${stats.whiteboards}` +
+        (excelCount > 0 ? ` · Excel 对象 ${excelCount}` : '')
       : '';
-    const path = result?.path ?? '';
+    const path = escapeHtml(result?.path);
 
     return `<div class="fde-panel">
       <div class="fde-panel-head">
@@ -219,7 +224,7 @@ export class ExportPanel {
       <div class="fde-body">
         <div class="fde-result-ok">
           <div class="fde-check">✓</div>
-          <div><b>${result?.filename ?? ''}</b><small>${size ? size.replace(' · ', '') : ''}</small></div>
+          <div><b>${escapeHtml(result?.filename)}</b><small>${size ? size.replace(' · ', '') : ''}</small></div>
         </div>
         ${
           path
@@ -234,7 +239,7 @@ export class ExportPanel {
           degraded.length
             ? `<ul class="fde-degraded">${degraded
                 .slice(0, 30)
-                .map((item) => `<li>· ${item}</li>`)
+                .map((item) => `<li>· ${escapeHtml(item)}</li>`)
                 .join('')}</ul>`
             : ''
         }
@@ -242,7 +247,7 @@ export class ExportPanel {
           errors.length
             ? `<ul class="fde-degraded" style="background:rgba(245,74,69,.08)">${errors
                 .slice(0, 20)
-                .map((item) => `<li>· ${item}</li>`)
+                .map((item) => `<li>· ${escapeHtml(item)}</li>`)
                 .join('')}</ul>`
             : ''
         }
@@ -262,7 +267,7 @@ export class ExportPanel {
         <button class="fde-close" data-act="close">✕</button>
       </div>
       <div class="fde-body">
-        <div class="fde-error">${this.state.error}</div>
+        <div class="fde-error">${escapeHtml(this.state.error)}</div>
         <p class="fde-hint">请确认当前页面是飞书文档且仍有访问权限，然后重试。</p>
       </div>
       <div class="fde-foot">

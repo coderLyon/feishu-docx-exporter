@@ -76,6 +76,7 @@
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 数据流、模块划分与关键设计决策（修改代码前建议阅读） |
 | [docs/STYLE-SYSTEM.md](docs/STYLE-SYSTEM.md) | Word 样式体系、字号与行距映射、自定义样式的修改方式 |
 | [docs/VERIFICATION.md](docs/VERIFICATION.md) | 验证体系、断言清单与验收结果 |
+| [docs/WORKFLOW.md](docs/WORKFLOW.md) | 本机登录、测试、真实飞书验证和 GitHub 发布 |
 | [docs/TOOLS.md](docs/TOOLS.md) | `tools/` 目录下脚本的用途与用法 |
 | [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | 常见问题与排查方法 |
 | [docs/COMPARISON.md](docs/COMPARISON.md) | 与飞书官方「下载为 Word」的对比 |
@@ -96,6 +97,10 @@ npm run test:capture  # 验证长画板、视口分片和双向滚动表格
 ```
 
 开发时加载 `dist/` 目录。修改代码后需在 `chrome://extensions` 点击「重新加载」，并刷新文档页，否则页面中运行的仍是旧版内容脚本。
+
+### 本机交付流程
+
+`npm run workflow -- verify` 执行离线测试、真实飞书导出、Word 校验和打包。使用 `npm run workflow -- release` 发布已经验证的版本。首次配置和发布参数见 [本机开发与发布](docs/WORKFLOW.md)。
 
 ### 常用命令
 

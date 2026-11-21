@@ -8,10 +8,12 @@ import { build, context } from 'esbuild';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseArgs } from 'node:util';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
-const DIST = path.join(ROOT, 'dist');
-const watch = process.argv.includes('--watch');
+const { values } = parseArgs({ options: { outdir: { type: 'string' }, watch: { type: 'boolean' } } });
+const DIST = path.resolve(ROOT, values.outdir ?? 'dist');
+const { watch } = values;
 
 const common = {
   bundle: true,

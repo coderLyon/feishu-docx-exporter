@@ -68,7 +68,13 @@ function visibleTargets(scroller) {
     if (canvas.closest('[class*="bitable"]')) continue;
     const sheet = canvas.closest('.docx-sheet-block');
     if (sheet) add('sheet', sheet);
-    else add('whiteboard', canvas.closest('[class*="whiteboard"], [class*="whiteboad"], [data-block-type="whiteboard"], [data-block-type="diagram"], [data-block-type="mindnote"]'));
+    else {
+      // 飞书的 canvas 自身也带 whiteboad 类名。用外层块归并内容层和辅助层。
+      const block = canvas.closest('[data-block-type="whiteboard"], [data-block-type="diagram"], [data-block-type="mindnote"]');
+      const container = block ?? canvas.parentElement?.closest('.whiteboard-canvas-container, .whiteboad-x-canvas-container') ??
+        canvas.parentElement?.closest('[class*="whiteboard"], [class*="whiteboad"]');
+      add('whiteboard', container);
+    }
   }
   return [...targets.values()];
 }

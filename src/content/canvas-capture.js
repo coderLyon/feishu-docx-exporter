@@ -64,18 +64,22 @@ function layersIn(container) {
   const layers = [...container.querySelectorAll('canvas')]
     .filter((canvas) => canvas.width > 60 && canvas.height > 40 && canvas.getBoundingClientRect().width >= 20);
   const score = (canvas) => {
-    const classes = [canvas.className, canvas.parentElement?.className].join(' ');
+    const layer = canvas.closest('[class*="content-canvas"], [class*="auxiliary-canvas"]');
+    const classes = [canvas.className, canvas.parentElement?.className, layer?.className].join(' ');
     if (/auxiliary|overlay|hover|select|tool|mask/i.test(classes)) return 0;
     return /content/i.test(classes) ? 2 : 1;
   };
   return layers.sort((a, b) => score(b) - score(a) || b.width * b.height - a.width * a.height);
 }
 
-function localScroller(canvas, container, docScroller) {
+function localScroller(canvas, container, docScroller, sheet) {
+  // 飞书画板的遮罩可能因交互层产生几像素溢出，内容画布本身已是整张图。
+  const overflow = sheet ? /^(auto|scroll|overlay|hidden)$/ : /^(auto|scroll|overlay)$/;
   for (let el = canvas.parentElement; el && container.contains(el) && el !== docScroller; el = el.parentElement) {
+    if (!sheet && el.matches('.whiteboard-canvas-container, .whiteboad-x-canvas-container')) continue;
     const { overflowX, overflowY } = getComputedStyle(el);
-    const scrollableX = /auto|scroll|hidden/.test(overflowX) && el.scrollWidth > el.clientWidth + EPSILON;
-    const scrollableY = /auto|scroll|hidden/.test(overflowY) && el.scrollHeight > el.clientHeight + EPSILON;
+    const scrollableX = overflow.test(overflowX) && el.scrollWidth > el.clientWidth + EPSILON;
+    const scrollableY = overflow.test(overflowY) && el.scrollHeight > el.clientHeight + EPSILON;
     if (scrollableX || scrollableY) return el;
   }
   return null;
@@ -264,7 +268,7 @@ export async function captureCanvasBlock(container, docScroller, { deadline, opt
   }
 
   const target = canvas ?? layers[0];
-  const scroller = localScroller(target, container, docScroller);
+  const scroller = localScroller(target, container, docScroller, sheet);
   const { scrollLeft, scrollTop } = docScroller;
   try {
     if (canvas) {

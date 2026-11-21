@@ -9,7 +9,10 @@ assert.deepEqual([...matchResources(['a', 'b', 'c', 'd'], [confirmed, ambiguous]
 assert.equal(matchResources(['a', 'b'], [confirmed, { id: null, x: 0, y: 40 }]).get('a').y, 40);
 
 const bundle = await build({
-  entryPoints: ['src/content/canvas-capture.js'],
+  stdin: { resolveDir: process.cwd(), contents: `
+    export { captureCanvasBlock } from './src/content/canvas-capture.js';
+    export { collectResources } from './src/content/capture.js';
+  ` },
   bundle: true, format: 'iife', globalName: 'capture', write: false,
 });
 const browser = await chromium.launch();
@@ -23,13 +26,26 @@ try {
       #doc {position:absolute;inset:30px 30px 30px;overflow:auto}
       .whiteboard {width:520px}
       canvas {display:block}
+      .whiteboard-canvas-container {position:relative;height:1720px;overflow:hidden}
+      .whiteboard-canvas-container > div {position:absolute;inset:0}
+      .whiteboard-canvas-container > input {position:absolute;top:1712px;height:18px}
       #fallback canvas {background:linear-gradient(#ff0000 0% 50%, #0000ff 50% 100%)}
       #grid {width:410px;height:270px;position:relative;overflow:auto}
       #extent {width:960px;height:2700px}
       #grid canvas {position:absolute;left:0;top:0}
     </style>
     <main id="doc">
-      <div id="board" class="whiteboard"><canvas width="520" height="1720"></canvas></div>
+      <div id="board" class="whiteboard" data-block-id="board-id" data-block-type="whiteboard">
+        <div class="whiteboard-canvas-container">
+          <div class="whiteboad-x-auxiliary-canvas"><div class="whiteboad-x-normal-container">
+            <canvas class="whiteboad-x-normal-canvas" width="520" height="1720"></canvas>
+          </div></div>
+          <div class="whiteboad-x-content-canvas"><div class="whiteboad-x-normal-container">
+            <canvas class="whiteboad-x-normal-canvas" width="520" height="1720"></canvas>
+          </div></div>
+          <input aria-hidden="true" tabindex="-1">
+        </div>
+      </div>
       <div id="fallback" class="whiteboard"><canvas width="520" height="1420"></canvas></div>
       <div class="docx-sheet-block"><div id="grid"><div id="extent"></div><canvas></canvas></div></div>
       <div style="height:500px"></div>
@@ -40,7 +56,10 @@ try {
     globalThis.chrome = { runtime: { sendMessage: () => captureTestViewport() } };
     const scroller = document.querySelector('#doc');
     const board = document.querySelector('#board');
-    const boardCanvas = board.querySelector('canvas');
+    const auxiliary = board.querySelector('.whiteboad-x-auxiliary-canvas canvas').getContext('2d');
+    auxiliary.fillStyle = '#f00';
+    auxiliary.fillRect(0, 0, 520, 1720);
+    const boardCanvas = board.querySelector('.whiteboad-x-content-canvas canvas');
     const ctx = boardCanvas.getContext('2d');
     ctx.fillStyle = '#0f0';
     ctx.fillRect(0, 0, 520, 860);
@@ -86,8 +105,14 @@ try {
       throw new Error('没有包含指定像素的瓦片');
     };
 
-    const data = [];
-    for (const [container, sheet] of [[board, false], [document.querySelector('#fallback'), false], [grid.parentElement, true]]) {
+    const collected = await capture.collectResources({
+      expected: { image: [], sheet: [], whiteboard: ['board-id'] }, options,
+    });
+    const capturedBoard = collected.byBlock.whiteboard.get('board-id');
+    if (!capturedBoard) throw new Error('真实结构的画板未归到文档块');
+    const data = [{ size: [capturedBoard.width, capturedBoard.height], parts: capturedBoard.parts.length,
+      first: await sample(capturedBoard, 15, 15), last: await sample(capturedBoard, 504, 1704) }];
+    for (const [container, sheet] of [[document.querySelector('#fallback'), false], [grid.parentElement, true]]) {
       const resource = await capture.captureCanvasBlock(container, scroller, { options, deadline, sheet });
       if (!resource) throw new Error(`采集失败 ${container.id || container.className}`);
       data.push({

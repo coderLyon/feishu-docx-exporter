@@ -9,13 +9,15 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseArgs } from 'node:util';
 import JSZip from 'jszip';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const DIST = path.join(ROOT, 'dist');
-const ZIP_NAME = '飞书文档导出Word扩展.zip';
-const TARGET = path.join(ROOT, ZIP_NAME);
+const { values } = parseArgs({ options: { dist: { type: 'string' }, output: { type: 'string' } } });
+const DIST = path.resolve(ROOT, values.dist ?? 'dist');
+const TARGET = path.resolve(ROOT, values.output ?? '飞书文档导出Word扩展.zip');
 const BACKUP_DIR = path.join(ROOT, 'output', 'zip-backup');
+const ARCHIVE_DATE = new Date('2000-01-01T00:00:00Z');
 
 function stamp() {
   const d = new Date();
@@ -39,11 +41,12 @@ async function main() {
     throw new Error('dist/manifest.json 不存在，请先执行 npm run build');
   }
 
+  const files = walk(DIST).sort();
   const zip = new JSZip();
   let total = 0;
-  for (const rel of walk(DIST)) {
+  for (const rel of files) {
     const buf = await fsp.readFile(path.join(DIST, rel));
-    zip.file(rel, buf);
+    zip.file(rel, buf, { date: ARCHIVE_DATE, createFolders: false });
     total += buf.length;
     console.log(`  + ${rel}  (${(buf.length / 1024).toFixed(1)} KB)`);
   }
@@ -54,16 +57,17 @@ async function main() {
     compressionOptions: { level: 9 },
   });
 
-  if (fs.existsSync(TARGET)) {
+  if (!values.output && fs.existsSync(TARGET)) {
     await fsp.mkdir(BACKUP_DIR, { recursive: true });
     const backup = path.join(BACKUP_DIR, `飞书文档导出Word扩展-${stamp()}.zip`);
     await fsp.copyFile(TARGET, backup);
     console.log(`旧包已备份 -> ${path.relative(ROOT, backup)}`);
   }
 
-  await fsp.writeFile(TARGET, buffer);
-  console.log(`\n打包完成 -> ${ZIP_NAME}`);
-  console.log(`  文件数 ${walk(DIST).length} · 原始 ${(total / 1024).toFixed(1)} KB · 压缩后 ${(buffer.length / 1024).toFixed(1)} KB`);
+  await fsp.mkdir(path.dirname(TARGET), { recursive: true });
+  await fsp.writeFile(TARGET, buffer, values.output ? { flag: 'wx' } : undefined);
+  console.log(`\n打包完成 -> ${path.relative(ROOT, TARGET)}`);
+  console.log(`  文件数 ${files.length} · 原始 ${(total / 1024).toFixed(1)} KB · 压缩后 ${(buffer.length / 1024).toFixed(1)} KB`);
 }
 
 main().catch((error) => {

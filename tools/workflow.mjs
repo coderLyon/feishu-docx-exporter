@@ -7,6 +7,8 @@ import { parseArgs } from 'node:util';
 import JSZip from 'jszip';
 import { checkChromium, exportLiveDocx, loginToFeishu } from './workflow-browser.mjs';
 import { githubRepository, releaseBundle } from './workflow-release.mjs';
+import { DEFAULT_OPTIONS, PX_TO_EMU } from '../src/shared/constants.js';
+import { pageContentPx } from '../src/shared/page-layout.js';
 
 const root = path.resolve(import.meta.dirname, '..');
 const workspace = path.join(root, 'output', 'workflow');
@@ -80,12 +82,13 @@ function sourceSnapshot(target) {
     images: count(/<img\b/g),
     sheets: count(/<sheet\b/g),
     whiteboards: count(/<(?:whiteboard|diagram|mindnote)\b/g),
+    attachments: count(/<source\b[^>]*\btoken="/g),
   };
 }
 
 async function verifyActualDoc({ config, extension, runDir, version }) {
   const expected = sourceSnapshot(config.target);
-  const { docx, stats, degraded } = await exportLiveDocx({
+  const { docx, stats, degraded, exportMs } = await exportLiveDocx({
     target: config.target, profile, extension, runDir, manifestVersion: version, headed: values.headed,
   });
   for (const key of ['images', 'sheets', 'whiteboards']) {
@@ -102,16 +105,37 @@ async function verifyActualDoc({ config, extension, runDir, version }) {
   const archive = await JSZip.loadAsync(await fs.readFile(docx), { checkCRC32: true });
   const doc = await archive.file('word/document.xml').async('string');
   const styles = await archive.file('word/styles.xml').async('string');
-  const normal = styles.match(/<w:style\b[^>]*w:styleId="Normal"[^>]*>[\s\S]*?<\/w:style>/)?.[0];
-  if (!normal?.includes('w:firstLineChars="200"')) throw new Error('DOCX 正文样式未使用首行缩进 2 字符');
+  const paragraphStyles = new Map([...styles.matchAll(/<w:style\b[^>]*w:styleId="([^"]+)"[^>]*>([\s\S]*?)<\/w:style>/g)]
+    .map(([, id, xml]) => [id, xml]));
+  if (!paragraphStyles.get('FdeBody')?.includes('w:firstLineChars="200"') ||
+      paragraphStyles.get('Normal')?.includes('w:firstLine')) {
+    throw new Error('DOCX 正文缩进未与默认样式隔离');
+  }
+  for (const [id, xml] of paragraphStyles) {
+    if (id !== 'Title' && !/^FdeHeading[1-9]$/.test(id)) continue;
+    if (!xml.includes('<w:jc w:val="left"/>') || !xml.includes('<w:ind w:left="0" w:firstLine="0"/>')) {
+      throw new Error(`DOCX 标题样式 ${id} 未顶格左对齐`);
+    }
+  }
   const lists = [...doc.matchAll(/<w:numPr>[\s\S]*?<\/w:numPr>/g)]
     .filter(([item]) => /<w:numId w:val="[1-9]\d*"/.test(item)).length;
   if (lists !== expected.listItems) {
     throw new Error(`DOCX 原生列表项预期 ${expected.listItems}，实际 ${lists}`);
   }
   const drawings = (doc.match(/<w:drawing>/g) ?? []).length;
-  if (drawings < expected.images + expected.sheets + expected.whiteboards) {
-    throw new Error('DOCX 内实际写入的图像块少于飞书资源数');
+  const expectedDrawings = expected.images + expected.sheets + expected.whiteboards;
+  if (drawings !== expectedDrawings) {
+    throw new Error(`DOCX 图像预期 ${expectedDrawings} 张，实际 ${drawings} 张`);
+  }
+  const page = pageContentPx(DEFAULT_OPTIONS);
+  const extents = [...doc.matchAll(/<wp:extent cx="(\d+)" cy="(\d+)"/g)];
+  if (extents.length !== drawings || extents.some(([, width, height]) =>
+    Number(width) > page.width * PX_TO_EMU || Number(height) > page.height * PX_TO_EMU)) {
+    throw new Error('DOCX 图像超出单页版心');
+  }
+  const attachments = archive.filter((name) => /^word\/embeddings\/oleObject\d+\.bin$/.test(name)).length;
+  if (attachments !== expected.attachments) {
+    throw new Error(`DOCX 附件对象预期 ${expected.attachments} 个，实际 ${attachments} 个`);
   }
   const officeProfile = pathToFileURL(path.join(runDir, 'office-profile')).href;
   run(config.office, [`-env:UserInstallation=${officeProfile}`, '--headless', '--convert-to', 'pdf', '--outdir', runDir, docx]);
@@ -120,9 +144,10 @@ async function verifyActualDoc({ config, extension, runDir, version }) {
     throw new Error('LibreOffice 未能打开真实导出的 DOCX 并生成 PDF');
   }
 
+  console.log(`真实文档导出用时 ${(exportMs / 1000).toFixed(1)} 秒`);
   return {
     headings: expected.headings, images: expected.images, sheets: expected.sheets, whiteboards: expected.whiteboards,
-    lists, drawings, degraded,
+    lists, drawings, attachments, exportMs, degraded,
   };
 }
 

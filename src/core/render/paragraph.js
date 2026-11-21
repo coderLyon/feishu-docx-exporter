@@ -62,7 +62,8 @@ export function renderTextLike(node, ctx, depth = 0) {
     const text = runs.map((run) => run.text).join('');
     // Word 样式生成章节编号，手写前缀可能跨多个不同格式的文字片段。
     const isAttachment = /^\s*(附件|附录)/.test(text);
-    let skip = isAttachment ? 0 : (text.match(NUMERIC_PREFIX)?.[0].length ?? 0);
+    const prefix = isAttachment ? null : text.match(NUMERIC_PREFIX)?.[0];
+    let skip = prefix?.length ?? text.length - text.trimStart().length;
     const headingRuns = runs.map((run) => {
       const sliced = run.text.slice(skip);
       skip -= run.text.length - sliced.length;
@@ -73,7 +74,6 @@ export function renderTextLike(node, ctx, depth = 0) {
       new Paragraph({
         children: runsToDocxChildren(headingRuns),
         style: STYLE.heading(level),
-        alignment: alignOf(node.data),
         numbering: isAttachment ? false : undefined,
       }),
       ...ctx.renderChildren(node.children, depth),

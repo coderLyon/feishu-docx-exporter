@@ -37,18 +37,17 @@ function sheetLandscape(resource, ctx) {
 }
 
 function imageParagraph(resource, ctx, caption, { landscape = false, name } = {}) {
-  const parts = resource?.parts ?? (resource?.data ? [resource] : []);
-  const result = parts.map((part) => {
-    const run = new ImageRun({
-      type: part.mimeType?.includes('jpeg') ? 'jpg' : 'png',
-      data: part.data,
-      transformation: imageSize(part, ctx, landscape),
-      altText: name ? { name } : undefined,
-    });
-    const paragraph = new Paragraph({ children: [run], alignment: AlignmentType.CENTER, style: STYLE.image });
-    if (landscape) paragraph.__fdeLandscape = true;
-    return paragraph;
+  const run = new ImageRun({
+    type: resource.mimeType?.includes('jpeg') ? 'jpg' : 'png',
+    data: resource.data,
+    transformation: imageSize(resource, ctx, landscape),
+    altText: name ? { name } : undefined,
   });
+  const paragraph = new Paragraph({
+    children: [run], alignment: AlignmentType.CENTER, style: STYLE.image, keepLines: true,
+  });
+  if (landscape) paragraph.__fdeLandscape = true;
+  const result = [paragraph];
   if (caption) {
     result.push(
       new Paragraph({
@@ -74,15 +73,15 @@ export function renderImage(node, ctx) {
     : '';
 
   const resource = ctx.takeResource('image', node.id);
-  if (!resource) {
+  if (!resource?.data) {
     const token = node.data?.image?.token ?? '';
     ctx.report.degraded.push(t('imageMissing', ctx.lang)(token));
-    return imageParagraph(null, ctx);
+    return [];
   }
   return imageParagraph(resource, ctx, caption || undefined);
 }
 
-/** 附件块：以链接占位 */
+/** 附件块：以 OLE 文件对象嵌入 */
 export function renderFile(node, ctx) {
   const file = node.data?.file ?? {};
   const name = sanitizeXmlText(file.name ?? '附件');
@@ -92,11 +91,11 @@ export function renderFile(node, ctx) {
   // 取到附件字节 → 输出占位段，打包后由 ole/inject.js 换成真正的 OLE 文件对象。
   // 双击即可用关联程序打开，而不是跳转浏览器链接。
   const attachment = ctx.attachments?.get?.(file.token);
-  if (ctx.options?.embedAttachments && attachment?.bytes?.length) {
+  if (attachment?.bytes?.length) {
     const index = (ctx.oleSeq = (ctx.oleSeq ?? 0) + 1);
     ctx.oleObjects = ctx.oleObjects ?? [];
     ctx.oleObjects.push({ index, name, bytes: attachment.bytes, size: file.size ?? 0 });
-    return [new Paragraph({ children: [new TextRun({ text: `\u0001FDE_OLE_${index}\u0001` })], style: STYLE.body })];
+    return [new Paragraph({ children: [new TextRun({ text: `\u0001FDE_OLE_${index}\u0001` })], style: STYLE.attachment })];
   }
 
   ctx.report.degraded.push(t('fileAsLink', ctx.lang)(name));
@@ -399,7 +398,7 @@ export function renderSheet(node, ctx) {
   const resource = ctx.takeResource('sheet', node.id);
   const html = resource?.table?.html;
   const tsv = typeof resource?.table === 'string' ? resource.table : resource?.table?.tsv;
-  const hasImage = resource?.data || resource?.parts?.length;
+  const hasImage = Boolean(resource?.data);
   const landscape = hasImage && sheetLandscape(resource, ctx);
 
   // 用户可在面板选择内嵌表格的导出方式：
@@ -416,9 +415,7 @@ export function renderSheet(node, ctx) {
       });
       return imageParagraph(resource, ctx, null, { landscape, name: sheetPreviewName(index) });
     }
-    if (hasImage) ctx.report.degraded.push(resource.parts
-      ? '· 内嵌表格预览需要跨页，已导出为分页图片'
-      : '· 未取到带样式的单元格数据，已保留截图');
+    if (hasImage) ctx.report.degraded.push('· 未取到带样式的单元格数据，已保留截图');
   }
 
   if (ctx.options?.embeddedSheet === 'table') {
@@ -458,7 +455,7 @@ export function renderSheet(node, ctx) {
 /** 画板 / 流程图 / 思维导图 */
 export function renderWhiteboard(node, ctx) {
   const resource = ctx.takeResource('whiteboard', node.id);
-  if (resource?.data || resource?.parts?.length) return imageParagraph(resource, ctx);
+  if (resource?.data) return imageParagraph(resource, ctx);
   ctx.report.degraded.push(t('whiteboardMissing', ctx.lang)());
   return [
     new Paragraph({

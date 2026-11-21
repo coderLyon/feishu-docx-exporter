@@ -84,7 +84,7 @@ export async function exportLiveDocx({ target, profile, extension, runDir, manif
     await page.locator('html[data-fde-ready="1"]').waitFor({ state: 'attached', timeout: 20_000 });
     await page.evaluate(() => {
       // 专用测试配置始终覆盖扩展默认选项和本次导出结果。
-      localStorage.removeItem('fde-options');
+      localStorage.setItem('fde-options', JSON.stringify({ embedImages: false, embedAttachments: false }));
       localStorage.removeItem('fde-last-run');
     });
 
@@ -99,8 +99,12 @@ export async function exportLiveDocx({ target, profile, extension, runDir, manif
     if ((await panel.locator('.fde-panel-ver').textContent()).trim() !== `v${manifestVersion}`) {
       throw new Error('扩展面板版本与本次构建不一致');
     }
+    if (await panel.locator('[data-key="embedImages"], [data-key="embedAttachments"]').count()) {
+      throw new Error('导出面板仍显示图片或附件嵌入开关');
+    }
 
     console.log('已通过 Chrome 扩展按钮打开导出面板，开始导出真实飞书文档。');
+    const startedAt = Date.now();
     await start.click();
     const result = await page.waitForFunction(() => {
       try {
@@ -111,15 +115,16 @@ export async function exportLiveDocx({ target, profile, extension, runDir, manif
     }, undefined, { timeout: 7 * 60 * 1000 });
     const summary = await result.jsonValue();
     if (!summary.ok) throw new Error(summary.error ?? '扩展导出失败');
+    const exportMs = summary.at - startedAt;
 
     await panel.getByText('导出完成', { exact: true }).waitFor({ timeout: 10_000 });
     const errors = await panel.locator('.fde-degraded[style] li').allTextContents();
     const docx = path.join(runDir, 'verification.docx');
     await saveDownloadedDocx(downloads, docx);
     const { stats, degraded } = summary;
-    await fs.writeFile(path.join(runDir, 'export.json'), JSON.stringify({ stats, degraded, errors }, null, 2), { mode: 0o600 });
+    await fs.writeFile(path.join(runDir, 'export.json'), JSON.stringify({ exportMs, stats, degraded, errors }, null, 2), { mode: 0o600 });
     if (errors.length) throw new Error(`导出面板报告 ${errors.length} 个渲染错误，详见 export.json`);
-    return { docx, stats, degraded };
+    return { docx, stats, degraded, exportMs };
   } finally {
     if (extensionId) await cdp.send('Extensions.uninstall', { id: extensionId }).catch(() => {});
     await context.close();

@@ -163,7 +163,7 @@ async function scanPass(scroller, state, pass, onProgress, fast) {
       if (kind === 'image' || !container.isConnected || Date.now() >= state.deadline) continue;
       entry.liveIdentity = kind === 'sheet' ? findSheetIdentity(container) : null;
       entry.resource = await captureCanvasBlock(container, scroller, {
-        deadline: state.deadline, options: state.options, sheet: kind === 'sheet',
+        deadline: state.deadline, sheet: kind === 'sheet',
       });
     }
 
@@ -189,17 +189,16 @@ export async function collectResources({ expected, options, onProgress }) {
   const scroller = findDocScroller();
   const { scrollTop, scrollLeft } = scroller;
   const state = {
-    options,
     ids: Object.fromEntries(KINDS.map((kind) => [kind, new Set(expected[kind])])),
     observed: Object.fromEntries(KINDS.map((kind) => [kind, []])),
     deadline: Date.now() + 4 * 60 * 1000,
   };
 
   try {
-    await scanPass(scroller, state, 1, onProgress, false);
+    await scanPass(scroller, state, 1, onProgress, options.fastCapture !== false);
     let matched = Object.fromEntries(KINDS.map((kind) => [kind, matchResources(expected[kind], state.observed[kind])]));
     if (KINDS.some((kind) => expected[kind].some((id) => !matched[kind].get(id)?.resource))) {
-      await scanPass(scroller, state, 2, onProgress, options.fastCapture !== false);
+      await scanPass(scroller, state, 2, onProgress, false);
       matched = Object.fromEntries(KINDS.map((kind) => [kind, matchResources(expected[kind], state.observed[kind])]));
     }
 

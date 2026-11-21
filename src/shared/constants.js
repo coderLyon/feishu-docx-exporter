@@ -105,7 +105,6 @@ export const PAGE_MARGINS = {
 
 /** 默认导出选项 */
 export const DEFAULT_OPTIONS = {
-  embedImages: true,
   removeWatermark: true,
   includeToc: false,
   // 内嵌电子表格：默认导出为图片（版式忠实、零风险）；
@@ -113,9 +112,7 @@ export const DEFAULT_OPTIONS = {
   // 默认导出图片：版式最忠实、不依赖浏览器调试接口，也不会因文档设置「禁止复制」而失败。
   // 需要可编辑时再手动切到「可编辑表格」或「Excel 对象」。
   embeddedSheet: 'image',
-  // 附件以 OLE 文件对象嵌入（双击可用关联程序打开），默认关闭
-  embedAttachments: true,
-  // 采集提速：两趟自适应等待（关掉则回到旧的慢速三步走）
+  // 先快速扫描，资源缺失时延长等待补采。
   fastCapture: true,
   landscapeWide: false,
   pageSize: 'A4',

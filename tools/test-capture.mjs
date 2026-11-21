@@ -33,6 +33,8 @@ try {
       #grid {width:410px;height:270px;position:relative;overflow:auto}
       #extent {width:960px;height:2700px}
       #grid canvas {position:absolute;left:0;top:0}
+      .faster-wrapper {position:relative;width:552px;height:1902px}
+      .embed-spreadsheet {position:absolute;border:1px solid black}
     </style>
     <main id="doc">
       <div id="board" class="whiteboard" data-block-id="board-id" data-block-type="whiteboard">
@@ -48,6 +50,11 @@ try {
       </div>
       <div id="fallback" class="whiteboard"><canvas width="520" height="1420"></canvas></div>
       <div class="docx-sheet-block"><div id="grid"><div id="extent"></div><canvas></canvas></div></div>
+      <div id="virtual-sheet" class="docx-sheet-block">
+        <div class="faster-wrapper">
+          <div class="embed-spreadsheet"><canvas class="spreadsheet-canvas" width="550"></canvas></div>
+        </div>
+      </div>
       <div style="height:500px"></div>
     </main>
   `);
@@ -83,26 +90,36 @@ try {
     grid.addEventListener('scroll', paint);
     grid.scrollTo(17, 22);
     paint();
+
+    const virtualSheet = document.querySelector('#virtual-sheet');
+    const wrapper = virtualSheet.querySelector('.faster-wrapper');
+    const frame = wrapper.firstElementChild;
+    const virtualCanvas = frame.firstElementChild;
+    virtualCanvas.height = scroller.clientHeight;
+    const paintVirtualSheet = () => {
+      const offset = Math.max(0, Math.min(1900 - virtualCanvas.height,
+        Math.round(scroller.getBoundingClientRect().top - wrapper.getBoundingClientRect().top)));
+      frame.style.top = `${offset}px`;
+      const pen = virtualCanvas.getContext('2d');
+      for (const [top, height, color] of [[0, 700, '#f00'], [700, 720, '#0f0'], [1420, 480, '#00f']]) {
+        pen.fillStyle = color;
+        pen.fillRect(0, top - offset, virtualCanvas.width, height);
+      }
+    };
+    scroller.addEventListener('scroll', paintVirtualSheet);
     scroller.scrollTop = 97;
+    paintVirtualSheet();
 
     const options = { pageSize: 'A4', pageMargin: 'normal' };
     const deadline = Date.now() + 30_000;
     const sample = async (resource, x, y) => {
-      let top = 0;
-      for (const part of resource.parts ?? [resource]) {
-        if (y >= top + part.height) {
-          top += part.height;
-          continue;
-        }
-        const png = await createImageBitmap(new Blob([part.data], { type: 'image/png' }));
-        const pixel = new OffscreenCanvas(1, 1);
-        const paint = pixel.getContext('2d');
-        paint.drawImage(png, Math.round(x * png.width / part.width), Math.round((y - top) * png.height / part.height),
-          1, 1, 0, 0, 1, 1);
-        png.close();
-        return Array.from(paint.getImageData(0, 0, 1, 1).data);
-      }
-      throw new Error('没有包含指定像素的瓦片');
+      const png = await createImageBitmap(new Blob([resource.data], { type: resource.mimeType }));
+      const pixel = new OffscreenCanvas(1, 1);
+      const paint = pixel.getContext('2d');
+      paint.drawImage(png, Math.round(x * png.width / resource.width), Math.round(y * png.height / resource.height),
+        1, 1, 0, 0, 1, 1);
+      png.close();
+      return Array.from(paint.getImageData(0, 0, 1, 1).data);
     };
 
     const collected = await capture.collectResources({
@@ -110,27 +127,37 @@ try {
     });
     const capturedBoard = collected.byBlock.whiteboard.get('board-id');
     if (!capturedBoard) throw new Error('真实结构的画板未归到文档块');
-    const data = [{ size: [capturedBoard.width, capturedBoard.height], parts: capturedBoard.parts.length,
+    const data = [{ size: [capturedBoard.width, capturedBoard.height],
       first: await sample(capturedBoard, 15, 15), last: await sample(capturedBoard, 504, 1704) }];
-    for (const [container, sheet] of [[document.querySelector('#fallback'), false], [grid.parentElement, true]]) {
-      const resource = await capture.captureCanvasBlock(container, scroller, { options, deadline, sheet });
+    for (const [container, sheet] of [[document.querySelector('#fallback'), false], [grid.parentElement, true], [virtualSheet, true]]) {
+      if (container === virtualSheet) {
+        virtualCanvas.width = 1;
+        setTimeout(() => {
+          virtualCanvas.width = 550;
+          paintVirtualSheet();
+        }, 250);
+      }
+      const resource = await capture.captureCanvasBlock(container, scroller, { deadline, sheet });
       if (!resource) throw new Error(`采集失败 ${container.id || container.className}`);
       data.push({
         size: [resource.width, resource.height],
-        parts: resource.parts?.length ?? 1,
         first: await sample(resource, 15, 15),
         last: await sample(resource, resource.width - 16, resource.height - 16),
       });
+      if (container === virtualSheet) {
+        data.at(-1).middle = await sample(resource, 15, 1100);
+      }
     }
     return { data, scroll: [scroller.scrollTop, grid.scrollLeft, grid.scrollTop] };
   });
   assert.deepEqual(result.data, [
-    { size: [520, 1720], parts: 2, first: [0, 255, 0, 255], last: [0, 0, 255, 255] },
-    { size: [520, 1420], parts: 2, first: [255, 0, 0, 255], last: [0, 0, 255, 255] },
-    { size: [960, 2700], parts: 3, first: [255, 0, 0, 255], last: [255, 255, 0, 255] },
+    { size: [520, 1720], first: [0, 255, 0, 255], last: [0, 0, 255, 255] },
+    { size: [520, 1420], first: [255, 0, 0, 255], last: [0, 0, 255, 255] },
+    { size: [960, 2700], first: [255, 0, 0, 255], last: [255, 255, 0, 255] },
+    { size: [550, 1900], first: [255, 0, 0, 255], middle: [0, 255, 0, 255], last: [0, 0, 255, 255] },
   ]);
   assert.deepEqual(result.scroll, [97, 17, 22]);
-  console.log('全尺寸画板、视口分片、双轴表格分片、分页高度和滚动恢复通过 Chromium 回归测试');
+  console.log('完整画板、视口拼接、双轴表格、随文档滚动重绘的长表和滚动恢复通过 Chromium 回归测试');
 } finally {
   await browser.close();
 }

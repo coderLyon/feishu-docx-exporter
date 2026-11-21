@@ -17,7 +17,8 @@ import {
 import { parseAttributedText } from '../text.js';
 import { runsToDocxChildren } from '../docx/runs.js';
 import { QUOTE_INK, STYLE } from '../docx/styles.js';
-import { BULLET_REFERENCE } from '../docx/numbering.js';
+import { bulletReference, listIndent, listLevel, orderedNumbering } from '../docx/numbering.js';
+import { orderedSequence } from './list-instance.js';
 import { highlightLine, isDarkBackground, safeBackground } from '../docx/highlight.js';
 import { toHexColor } from '../../shared/util.js';
 
@@ -35,10 +36,6 @@ function alignOf(data) {
   return ALIGN[data?.align] ?? undefined;
 }
 
-function indentFor(level) {
-  return { left: 360 * level + 420, hanging: 360 };
-}
-
 /**
  * 按上下文挑段落样式：引用 > 表格 > 正文。
  * 字号 / 字体 / 行距 / 颜色全部由样式决定，段落上不再写直接格式。
@@ -51,97 +48,52 @@ function styleIdFor(ctx) {
   return STYLE.body;
 }
 
-/**
- * 计算标题自动编号。
- *
- * 判据来自飞书块数据本身：**data.seq === 'auto' 的标题才参与自动编号**。
- * 正文章节的 7 个 heading1 都带 seq='auto'；「附件A/B/C」没有 seq 字段，
- * 因此既不补号也不占用计数器（这正是上一版用「附件」正则猜测会误判的原因）。
- *
- * 有 seq 但文本里已经写了编号（heading2/3 的编号打在文本里）时跳过，防止重复。
- */
-function headingPrefix(node, ctx, level, text) {
-  if (node.data?.seq !== 'auto') return '';
-
-  ctx.headingCounters[level - 1] = (ctx.headingCounters[level - 1] ?? 0) + 1;
-  for (let i = level; i < ctx.headingCounters.length; i += 1) ctx.headingCounters[i] = 0;
-
-  if (NUMERIC_PREFIX.test(text)) return '';
-  return `${ctx.headingCounters.slice(0, level).join('.')}. `;
-}
-
 // 竖线颜色/粗细取自飞书官方导出（#BBBFC4 / sz=18）；正文为官方同款灰 #646A73（QUOTE_INK）。
 // 若要与竖线**完全相同**，把这里改成 QUOTE_INK 即可。
 const QUOTE_BAR = 'BBBFC4';
 const QUOTE_BAR_SIZE = 18;
 
 /** 正文 / 标题 */
-export function renderTextLike(node, ctx) {
+export function renderTextLike(node, ctx, depth = 0) {
   const runs = parseAttributedText(node.data?.text);
-  const children = runsToDocxChildren(runs);
 
   if (node.type.startsWith('heading')) {
-    const level = Math.min(9, Math.max(1, Number(node.type.slice(7)) || 1));
+    const level = Number(node.type.slice(7)) || 1;
     const text = runs.map((run) => run.text).join('');
-    // 计数器照旧维护：别处（如报告摘要）可能读它
-    headingPrefix(node, ctx, level, text);
-
-    // 编号交给 Word 的 numbering：插入/删除标题后编号自动重排。
-    //
-    // 关键点：飞书里大量标题的编号是**作者手打在文本里**的（"5. 子表更新"、"6.2 状态流转"），
-    // 只给 seq==='auto' 挂编号会让大部分标题没有编号。所以这里统一处理：
-    //   1) 附件/附录类标题保留原样、不编号
-    //   2) 其余标题剥掉手打的数字前缀，改由 Word 编号
-    // 这样插入/删除标题时编号会自动重排 —— 手打编号做不到这一点。
+    // Word 样式生成章节编号，手写前缀可能跨多个不同格式的文字片段。
     const isAttachment = /^\s*(附件|附录)/.test(text);
-    let headingChildren = children;
-    if (!isAttachment && NUMERIC_PREFIX.test(text)) {
-      const stripped = runs.map((run, i) =>
-        i === 0 ? { ...run, text: String(run.text ?? '').replace(NUMERIC_PREFIX, '') } : run,
-      );
-      headingChildren = runsToDocxChildren(stripped);
-    }
+    let skip = isAttachment ? 0 : (text.match(NUMERIC_PREFIX)?.[0].length ?? 0);
+    const headingRuns = runs.map((run) => {
+      const sliced = run.text.slice(skip);
+      skip -= run.text.length - sliced.length;
+      return { ...run, text: sliced };
+    }).filter((run) => run.text);
 
     return [
       new Paragraph({
-        children: headingChildren,
+        children: runsToDocxChildren(headingRuns),
         style: STYLE.heading(level),
         alignment: alignOf(node.data),
-        // 编号由标题样式自带（见 styles.js），附件标题在打包后取消编号
+        numbering: isAttachment ? false : undefined,
       }),
-      ...ctx.renderChildren(node.children, 0),
+      ...ctx.renderChildren(node.children, depth),
     ];
   }
 
+  const children = runsToDocxChildren(runs);
   return [
     new Paragraph({
       children: children.length ? children : [new TextRun({ text: '' })],
       style: styleIdFor(ctx),
       alignment: alignOf(node.data),
+      indent: depth > 0 ? { left: listIndent(depth - 1, compactList(ctx)).left } : undefined,
     }),
-    ...ctx.renderChildren(node.children, 0),
+    ...ctx.renderChildren(node.children, depth),
   ];
 }
 
-/**
- * 无序列表。
- * 用自建的 fde-bullet 编号定义 + custom:true：这样段落上还能指定 FdeQuote /
- * FdeTableText 等样式，docx 不会额外插入一个 ListParagraph 的 pStyle
- * （一个 pPr 里出现两个 pStyle 会被 Word 判为文档损坏）。
- */
-/**
- * 引用内列表的缩进覆盖。
- *
- * 编号定义里的 level0 是 left=720 / hanging=360（符号落在 18pt 处），
- * 这在正文里没问题，但引用里正文从头排版（符号应与正文同 x 起），
- * 否则「适用场景」在 x=7.2、下面两个 bullet 却在 x=25.2 —— 看起来就是没对齐。
- * 在线与飞书官方导出都是「符号与引用正文同 x，文字悬出」。
- * pPr 里的 w:ind 会覆盖编号级缩进，所以这里直接给段落写缩进即可。
- */
-function quoteListIndent(ctx, level) {
-  if (!ctx.quoteDepth) return undefined;
-  const base = 360 + level * 420; // 0 级符号贴齐正文，逐级 21pt
-  return { left: base, hanging: base };
+function compactList(ctx) {
+  return ctx.quoteDepth > 0 || ctx.tableDepth > 0 || ctx.calloutDepth > 0;
 }
 
 export function renderBullet(node, ctx, level = 0) {
@@ -149,9 +101,7 @@ export function renderBullet(node, ctx, level = 0) {
   return [
     new Paragraph({
       children: runsToDocxChildren(runs),
-      // 树深度从 1 开始，编号定义是 0 基 —— 不减 1 的话一级列表会套上二级样式（○、缩进 720）
-      numbering: { reference: BULLET_REFERENCE, level: Math.max(0, level - 1), custom: true },
-      indent: quoteListIndent(ctx, level),
+      numbering: { reference: bulletReference(compactList(ctx)), level: listLevel(level), custom: true },
       // 单元格里的列表要跟随表格字号，否则同一格内 10.5pt 与 12pt 混排
       style: ctx.quoteDepth > 0 ? STYLE.quote : ctx.tableDepth > 0 ? STYLE.tableText : STYLE.listBullet,
       alignment: alignOf(node.data),
@@ -160,14 +110,19 @@ export function renderBullet(node, ctx, level = 0) {
   ];
 }
 
-/** 有序列表（Word 原生编号，按列表段自动重新从 1 计数） */
-export function renderOrdered(node, ctx, level = 0, instance = ctx.ordered.instance) {
+/** 有序列表使用可在 Word 中继续编辑的原生编号。 */
+export function renderOrdered(node, ctx, level = 0, list) {
   const runs = parseAttributedText(node.data?.text);
+  const start = list?.start ?? orderedSequence(node) ?? 1;
   return [
     new Paragraph({
       children: runsToDocxChildren(runs),
-      numbering: { reference: `fde-ordered-${instance}`, level },
-      indent: quoteListIndent(ctx, level),
+      numbering: {
+        reference: orderedNumbering(start, compactList(ctx)),
+        instance: list?.instance ?? ++ctx.listInstance,
+        level: listLevel(level),
+        custom: true,
+      },
       style: ctx.quoteDepth > 0 ? STYLE.quote : ctx.tableDepth > 0 ? STYLE.tableText : STYLE.listOrdered,
       alignment: alignOf(node.data),
     }),
@@ -185,7 +140,7 @@ export function renderTodo(node, ctx, level = 0) {
     new Paragraph({
       children: [new TextRun({ text: done ? '☑ ' : '☐ ', bold: true }), ...children],
       style: ctx.quoteDepth > 0 ? STYLE.quote : ctx.tableDepth > 0 ? STYLE.tableText : STYLE.todo,
-      indent: indentFor(level),
+      indent: listIndent(level, compactList(ctx)),
     }),
     ...ctx.renderChildren(node.children, level + 1),
   ];
@@ -401,5 +356,3 @@ export function renderPlaceholder(node, ctx, message) {
     }),
   ];
 }
-
-export { alignOf, indentFor, QUOTE_BAR };

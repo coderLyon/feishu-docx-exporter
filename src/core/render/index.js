@@ -1,7 +1,6 @@
 /** 块类型分发器 + 渲染上下文 */
-import { startsNewOrderedInstance } from './list-instance.js';
-import { detectLang } from '../../shared/messages.js';
-import { t } from '../../shared/messages.js';
+import { orderedSequence, startsNewOrderedInstance } from './list-instance.js';
+import { detectLang, t } from '../../shared/messages.js';
 import {
   renderBullet,
   renderCallout,
@@ -58,49 +57,40 @@ export function createRenderContext({
     bodyFont,
     // 文档语言：决定占位/降级文案用中文还是英文（按正文中文占比自动判断）
     lang: detectLang(textSample),
-    ordered: { instance: 0, current: 0, byLevel: [] },
+    listInstance: 0,
     counters: { image: 0, sheet: 0, whiteboard: 0 },
-    // 标题自动编号计数器（1..9 级）
-    headingCounters: [0, 0, 0, 0, 0, 0, 0, 0, 0],
     // >0 表示正在渲染表格单元格，用于切换表格专用段落样式
     tableDepth: 0,
     // >0 表示正在渲染引用容器，子段落改用 FdeQuote 样式
     quoteDepth: 0,
 
-    /** 按顺序取下一个页面资源（collectResources 返回的是复数键名） */
-    takeResource(kind) {
+    /** 浏览器采集按块匹配，离线工具也可传入已有的资源队列。 */
+    takeResource(kind, blockId) {
+      const matched = this.resources.byBlock?.[kind];
+      if (matched) return matched.get(blockId) ?? null;
       const list = this.resources[`${kind}s`] ?? [];
       const index = this.counters[kind] ?? 0;
       this.counters[kind] = index + 1;
       return list[index] ?? null;
     },
 
-    /**
-     * 渲染一组子块；有序列表在此处维护编号实例。
-     *
-     * 实例号必须**按层级**记录：嵌套子列表会递归进 renderChildren，
-     * 若共用同一个全局 current，子列表的实例号会顶掉父级的，
-     * 父级后续项就被并进子列表实例、从 1 重新计数
-     *（实测：1、2、a、然后 1、2、3 —— 编号倒退）。
-     */
+    /** 每组兄弟块维护自己的编号。子列表和其他单元格各自计数。 */
     renderChildren(nodes, level = 0) {
       const out = [];
-      let prevWasOrdered = false;
+      let list = null;
       for (const node of nodes ?? []) {
         if (!node) continue;
         if (node.type === 'ordered') {
-          if (startsNewOrderedInstance(node, prevWasOrdered)) {
-            this.ordered.instance += 1;
-            this.ordered.byLevel[level] = this.ordered.instance;
+          if (startsNewOrderedInstance(node, list?.last)) {
+            const start = orderedSequence(node) ?? 1;
+            list = { start, last: start, instance: ++this.listInstance };
+          } else {
+            list.last += 1;
           }
-          const instance = this.ordered.byLevel[level] ?? this.ordered.instance;
-          out.push(...renderOrdered(node, this, level, instance));
-          prevWasOrdered = true;
+          out.push(...renderNode(node, this, level, list));
         } else {
-          // 普通段落不打断有序列表的连续编号：飞书里列表项后的补充说明就是一个 text 块，
-          // 若在此处当作「列表结束」，后面的项会重开实例、编号从 1 重新开始
-          //（线上表现：1、2、3、然后又是 1、2、3…）。标题/表格/代码/引用/图片等仍会打断。
-          if (node.type !== 'text') prevWasOrdered = false;
+          // 补充说明文字可位于相邻编号项之间。
+          if (node.type !== 'text') list = null;
           out.push(...renderNode(node, this, level));
         }
       }
@@ -112,13 +102,12 @@ export function createRenderContext({
 }
 
 /** 单块渲染分发 */
-export function renderNode(node, ctx, level = 0) {
+export function renderNode(node, ctx, level = 0, list) {
   try {
     switch (node.type) {
       case 'page':
         return ctx.renderChildren(node.children, level);
       case 'text':
-        return renderTextLike(node, ctx);
       case 'heading1':
       case 'heading2':
       case 'heading3':
@@ -128,11 +117,11 @@ export function renderNode(node, ctx, level = 0) {
       case 'heading7':
       case 'heading8':
       case 'heading9':
-        return renderTextLike(node, ctx);
+        return renderTextLike(node, ctx, level);
       case 'bullet':
         return renderBullet(node, ctx, level);
       case 'ordered':
-        return renderOrdered(node, ctx, level);
+        return renderOrdered(node, ctx, level, list);
       case 'todo':
         return renderTodo(node, ctx, level);
       case 'code':

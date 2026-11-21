@@ -15,50 +15,40 @@ import {
   WidthType,
 } from 'docx';
 import { PX_TO_EMU, PX_TO_TWIP } from '../../shared/constants.js';
-import { SHEET_MARKER } from '../ole/inject.js';
+import { sheetPreviewName } from '../ole/inject.js';
 import { t } from '../../shared/messages.js';
 import { sanitizeXmlText } from '../../shared/util.js';
 import { STYLE } from '../docx/styles.js';
+import { pageContentPx, useLandscapeImage } from '../../shared/page-layout.js';
 
-/** 按页面宽度等比缩放 */
-function fitImage(width, height, maxWidthPx) {
-  if (!width || !height) return { width: maxWidthPx, height: Math.round(maxWidthPx * 0.6) };
-  const scale = Math.min(1, maxWidthPx / width);
-  return { width: Math.round(width * scale), height: Math.round(height * scale) };
+function imageSize(resource, ctx, landscape) {
+  const page = pageContentPx(ctx.options ?? {}, landscape);
+  const contentWidth = landscape ? (ctx.landscapeContentWidth ?? 0) / PX_TO_TWIP : ctx.contentWidthPx;
+  const maxWidth = Math.min(page.width, contentWidth || page.width,
+    ctx.cellWidthPx ? Math.max(8, ctx.cellWidthPx - 12) : Infinity);
+  const width = resource.width || maxWidth;
+  const height = resource.height || width * 0.6;
+  const scale = Math.min(1, maxWidth / width, page.height / height);
+  return { width: Math.max(1, Math.floor(width * scale)), height: Math.max(1, Math.floor(height * scale)) };
 }
 
-function imageParagraph(resource, ctx, caption, { allowLandscape = false } = {}) {
-  // 只有「宽表格截图」才配横页；普通插图即便很宽也不该把整篇文档切成横的
-  // （实测：无条件判定会把 845 块文档切成 11 节、5 个横向页）
-  const contentPx = (ctx.pageContentWidth ?? 10106) / 15;
-  const isWide =
-    allowLandscape &&
-    ctx.options?.landscapeWide === true &&
-    (resource?.width ?? 0) / Math.max(resource?.height ?? 1, 1) >= 2.2;
-  const markWide = (el) => {
-    if (isWide && el) el.__fdeLandscape = true;
-    return el;
-  };
-  if (!resource?.data) return [];
+function sheetLandscape(resource, ctx) {
+  return !ctx.cellWidthPx && useLandscapeImage(resource, ctx.options ?? {});
+}
 
-  // 在表格单元格里按列宽缩放（再留一点单元格内边距），否则会撑破表格
-  // 宽表进横页后要按**横向版心**缩放，否则只占纸面一半（实测横页里表格只有 70% 宽）
-  const contentWidthPx = isWide && ctx.landscapeContentWidth
-    ? Math.round(ctx.landscapeContentWidth / 15)
-    : ctx.contentWidthPx;
-  const available = ctx.cellWidthPx
-    ? Math.max(60, Math.min(contentWidthPx, ctx.cellWidthPx - 12))
-    : contentWidthPx;
-  const { width, height } = fitImage(resource.width, resource.height, available);
-  const run = new ImageRun({
-    type: resource.mimeType?.includes('jpeg') ? 'jpg' : 'png',
-    data: resource.data,
-    transformation: { width, height },
+function imageParagraph(resource, ctx, caption, { landscape = false, name } = {}) {
+  const parts = resource?.parts ?? (resource?.data ? [resource] : []);
+  const result = parts.map((part) => {
+    const run = new ImageRun({
+      type: part.mimeType?.includes('jpeg') ? 'jpg' : 'png',
+      data: part.data,
+      transformation: imageSize(part, ctx, landscape),
+      altText: name ? { name } : undefined,
+    });
+    const paragraph = new Paragraph({ children: [run], alignment: AlignmentType.CENTER, style: STYLE.image });
+    if (landscape) paragraph.__fdeLandscape = true;
+    return paragraph;
   });
-
-  // 飞书图片块默认居中
-  // 图片段落单独挂「图片」样式：导出后能一眼认出这是图片块
-  const result = [markWide(new Paragraph({ children: [run], alignment: AlignmentType.CENTER, style: STYLE.image }))];
   if (caption) {
     result.push(
       new Paragraph({
@@ -83,7 +73,7 @@ export function renderImage(node, ctx) {
     ? (captionRuns.initialAttributedTexts?.text?.['0'] ?? '').trim()
     : '';
 
-  const resource = ctx.takeResource('image');
+  const resource = ctx.takeResource('image', node.id);
   if (!resource) {
     const token = node.data?.image?.token ?? '';
     ctx.report.degraded.push(t('imageMissing', ctx.lang)(token));
@@ -406,83 +396,47 @@ function buildSheetTable(tsv, ctx) {
 
 export function renderSheet(node, ctx) {
   const token = node.data?.token ?? '';
-  const resource = ctx.takeResource('sheet');
+  const resource = ctx.takeResource('sheet', node.id);
+  const html = resource?.table?.html;
+  const tsv = typeof resource?.table === 'string' ? resource.table : resource?.table?.tsv;
+  const hasImage = resource?.data || resource?.parts?.length;
+  const landscape = hasImage && sheetLandscape(resource, ctx);
 
   // 用户可在面板选择内嵌表格的导出方式：
   //   'image'（默认）—— 截图，版式最忠实
   //   'table'        —— Word 原生表格，可编辑可搜索（需要先提取到单元格数据）
   //   'excel'       —— Word 里内嵌真 Excel 对象（预览图为整表截图，双击进 Excel）
   if (ctx.options?.embeddedSheet === 'excel') {
-    const html = typeof resource?.table === 'object' ? resource.table.html : null;
-    const tsv = typeof resource?.table === 'object' ? resource.table.tsv : resource?.table;
-    // HTML 有样式优先；只有 TSV 时也生成（值对、样式朴素），别直接退成图片
-    if (html || tsv) {
-      // 渲染是同步的、xlsx 生成是异步的 → 这里只登记任务，由 export.js 打包前统一生成
-      const index = (ctx.xlsxSeq = (ctx.xlsxSeq ?? 0) + 1);
+    if (html && resource?.data) {
       ctx.xlsxObjects = ctx.xlsxObjects ?? [];
-      const contentPt = (ctx.pageContentWidth ?? 10106) / 20;
-      const wide = (ctx.landscapeContentWidth ?? 0) / 20;
-      const pxW = resource?.width || 800;
-      const pxH = resource?.height || 400;
-      // 只有「特别宽」的表格才值得单独转横向页（宽高比 ≥ 2.2）；
-      // 一页竖一页横在整篇里非常突兀，所以默认关闭，由面板开关控制
-      const wantLandscape = ctx.options?.landscapeWide === true && pxW / pxH >= 2.2 && wide > 0;
-      let widthPt = Math.min(wantLandscape ? wide : contentPt, contentPt * 1.6);
-      let heightPt = (widthPt * pxH) / pxW;
-      if (heightPt > 620) {
-        widthPt *= 620 / heightPt;
-        heightPt = 620;
-      }
+      const index = ctx.xlsxObjects.length + 1;
+      const { width, height } = imageSize(resource, ctx, landscape);
       ctx.xlsxObjects.push({
-        index,
-        html,
-        tsv,
-        name: token,
-        preview: resource?.data ?? null,
-        widthPt,
-        heightPt,
-        wide,
+        index, html, name: node.data?.name || 'Sheet1', widthPt: width * 0.75, heightPt: height * 0.75,
       });
-      const placeholder = new Paragraph({
-        children: [new TextRun({ text: `${SHEET_MARKER}${index}\u0001` })],
-        alignment: AlignmentType.CENTER,
-        style: STYLE.body,
-      });
-      if (wantLandscape) placeholder.__fdeLandscape = true;
-      return [placeholder];
+      return imageParagraph(resource, ctx, null, { landscape, name: sheetPreviewName(index) });
     }
-    // 选了 Excel 对象但没拿到单元格数据：必须说出来，不能静默退回截图。
-    // 一份文档多张表时只提示一次，否则报告会被同一句话刷屏
-    if (!ctx.__sheetFallbackNoticed) {
-      ctx.__sheetFallbackNoticed = true;
-      ctx.report.degraded.push(
-        '· 内嵌表格未读到单元格数据，已用截图代替。' +
-          '请确认：①扩展已重新加载 ②导出时该标签页没有开 DevTools ③文档未设置「禁止复制」',
-      );
-    }
-    if (!resource?.data) ctx.report.degraded.push(t('sheetNoCellData', ctx.lang)());
+    if (hasImage) ctx.report.degraded.push(resource.parts
+      ? '· 内嵌表格预览需要跨页，已导出为分页图片'
+      : '· 未取到带样式的单元格数据，已保留截图');
   }
 
   if (ctx.options?.embeddedSheet === 'table') {
     // 优先用带样式的 HTML（底色/字色/字号/合并/列宽），退回纯文本 TSV
-    const html = typeof resource?.table === 'object' ? resource.table.html : null;
     if (html) {
       const built = buildSheetFromHtml(html, ctx);
       if (built) return built;
     }
-    if (resource?.table) {
-      const tsv = typeof resource.table === 'object' ? resource.table.tsv : resource.table;
+    if (tsv) {
       const built = buildSheetTable(tsv, ctx);
       if (built) return built;
       // 数据拿到了但版心放不下/格式异常 → 继续走图片，下面会补一条降级说明
-    } else if (resource?.data) {
+    } else if (hasImage) {
       ctx.report.degraded.push(t('sheetNoCellData', ctx.lang)());
     }
   }
 
-  if (resource?.data) {
-    return imageParagraph(resource, ctx, null, { allowLandscape: true });
-  }
+  if (hasImage) return imageParagraph(resource, ctx, null, { landscape });
 
   ctx.report.degraded.push(t('sheetAsLink', ctx.lang)());
   return [
@@ -503,8 +457,8 @@ export function renderSheet(node, ctx) {
 
 /** 画板 / 流程图 / 思维导图 */
 export function renderWhiteboard(node, ctx) {
-  const resource = ctx.takeResource('whiteboard');
-  if (resource?.data) return imageParagraph(resource, ctx);
+  const resource = ctx.takeResource('whiteboard', node.id);
+  if (resource?.data || resource?.parts?.length) return imageParagraph(resource, ctx);
   ctx.report.degraded.push(t('whiteboardMissing', ctx.lang)());
   return [
     new Paragraph({

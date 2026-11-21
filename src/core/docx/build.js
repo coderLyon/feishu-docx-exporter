@@ -13,41 +13,6 @@ import { DOCX_MIME } from '../ole/inject.js';
 import { PAGE_MARGINS, PAGE_SIZES } from '../../shared/constants.js';
 
 /**
- * @param {Object} params
- * @param {string} params.title 文档标题
- * @param {Array} params.children 正文 docx 元素
- * @param {Object} params.options 导出选项
- * @param {number} params.orderedInstances 有序列表实例数
- * @returns {Promise<Blob>}
- */
-
-/**
- * 取消「附件 / 附录」类标题的自动编号。
- *
- * 标题编号绑定在样式上（手动套用样式即自动出号），附件标题不应参与编号。
- * docx 库不支持在段落上关闭样式带来的编号，因此在打包后写入
- * <w:numPr><w:numId w:val="0"/></w:numPr>（OOXML 的「无编号」写法）。
- *
- * 放在 build 里而不是导出流程里：离线渲染等其他入口也必须经过这一步。
- */
-async function cancelAttachmentHeadingNumbers(blob) {
-  const zip = await JSZip.loadAsync(await blob.arrayBuffer());
-  const file = zip.file('word/document.xml');
-  if (!file) return blob;
-  let doc = await file.async('string');
-  doc = doc.replace(/<w:p\b[^>]*>[\s\S]*?<\/w:p>/g, (para) => {
-    if (!/<w:pStyle w:val="FdeHeading\d"\/>/.test(para)) return para;
-    const text = [...para.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)].map((m) => m[1]).join('');
-    if (!/^\s*(附件|附录)/.test(text)) return para;
-    if (/<w:numPr>/.test(para)) return para;
-    return para.replace('</w:pPr>', '<w:numPr><w:numId w:val="0"/></w:numPr></w:pPr>');
-  });
-  zip.file('word/document.xml', doc);
-  return zip.generateAsync({ type: 'blob', mimeType: DOCX_MIME });
-}
-
-
-/**
  * 只把「本文档真正用到」的样式留在 Word 快速样式库里。
  *
  * Word 的样式库会列出所有带 <w:qFormat/> 的样式。如果不裁剪，像「标题 4-9」这类
@@ -78,10 +43,10 @@ async function pruneUnusedQuickStyles(blob) {
     return whole.replace('<w:qFormat/>', '');
   });
   zip.file('word/styles.xml', styles);
-  return zip.generateAsync({ type: 'blob', mimeType: DOCX_MIME });
+  return zip.generateAsync({ type: 'blob', mimeType: DOCX_MIME, compression: 'DEFLATE' });
 }
 
-export async function buildDocx({ title, children, options, orderedInstances }) {
+export async function buildDocx({ title, children, options }) {
   const size = PAGE_SIZES[options.pageSize] ?? PAGE_SIZES.A4;
   const margin = PAGE_MARGINS[options.pageMargin] ?? PAGE_MARGINS.normal;
 
@@ -152,13 +117,11 @@ export async function buildDocx({ title, children, options, orderedInstances }) 
     title: title || '未命名文档',
     description: 'Exported from Feishu Docs',
     styles: buildStyles(options),
-    numbering: buildNumbering(orderedInstances),
+    numbering: buildNumbering(),
     features: { updateFields: options.includeToc },
     sections,
   });
 
-  const blob = await Packer.toBlob(document);
-  const withHeadings = await cancelAttachmentHeadingNumbers(blob);
-  return pruneUnusedQuickStyles(withHeadings);
+  return pruneUnusedQuickStyles(await Packer.toBlob(document));
 }
 

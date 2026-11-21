@@ -49,45 +49,34 @@ function togglePanel() {
 }
 
 async function runExport(currentPanel, options) {
-  currentPanel.setState({ mode: 'busy', visible: true, progress: { percent: 2, stage: 'scroll' } });
+  const url = location.href;
+  currentPanel.setState({ mode: 'busy', visible: true, progress: { percent: 2, stage: 'resolve' } });
 
   try {
-    // 选「Excel 对象」时需要单元格数据。注意：**不能在这里申请调试权限** ——
-    // 浏览器权限弹窗会抢走焦点，飞书随即节流渲染，整篇采集会变成空文档（实测）。
-    // 权限由用户在面板里主动开启，这里只查是否已有。
-    // 不再用 chrome.permissions.contains 做门禁 —— 实测它会误报 false（扩展明明是必装权限），
-    // 导致整条提取链路被静默跳过。直接尝试，失败由后台返回具体原因。
-    const extractSheets = options.embeddedSheet === 'excel';
-
-    const resources = await collectResources({
-      extractSheets,
-      fastCapture: options.fastCapture !== false,
-      onProgress: (info) => {
-        if (!info?.total) return;
-        const ratio = Math.max(0, Math.min(1, info.loaded / info.total));
-        // 预热 2→20%，正式扫描 20→38%，让用户在长文档上能看到持续进展
-        const span = info.stage === 'warmup' ? [2, 20] : [20, 38];
-        currentPanel.setProgress({
-          stage: info.stage === 'warmup' ? 'scroll' : 'scroll',
-          percent: Math.round(span[0] + ratio * (span[1] - span[0])),
-        });
-      },
-    });
-
     const exported = await exportToDocx({
-      url: location.href,
+      url,
       options,
-      resources,
+      collect: (expected) => collectResources({
+        expected,
+        options,
+        onProgress: (info) => {
+          if (info.stage === 'scroll') {
+            const ratio = Math.max(0, Math.min(1, info.loaded / info.total));
+            currentPanel.setProgress({ stage: 'scroll', percent: 8 + Math.round(ratio * 30) });
+          } else {
+            currentPanel.setProgress(info);
+          }
+        },
+      }),
       onProgress: (info) => {
         if (info?.stage) currentPanel.setProgress(info);
       },
     });
-
-    currentPanel.setProgress({ stage: 'pack', percent: 92 });
-    // 把表格读取的具体失败原因顶到报告最前面，便于定位（否则只有一句笼统提示）
-    if (resources.liveSheetError) {
-      exported.report?.degraded?.unshift(`· 表格读取失败原因：${resources.liveSheetError}`);
+    if (new URL(location.href).pathname !== new URL(url).pathname) {
+      throw new Error('导出期间切换了文档，请在目标页面重新导出');
     }
+
+    currentPanel.setProgress({ stage: 'pack', percent: 96 });
 
     const filename = buildFilename(exported.title);
     // 防御：任何后处理（OLE/zip 重打包）都可能把 MIME 换成 application/zip，
@@ -141,8 +130,7 @@ async function runExport(currentPanel, options) {
           size: exported.blob.size,
           stats: exported.stats,
           degraded: exported.report?.degraded ?? [],
-          liveSheetError: resources.liveSheetError ?? null,
-          liveSheets: resources.liveSheets ?? null,
+          liveSheets: exported.liveSheets,
         }),
       );
     } catch {

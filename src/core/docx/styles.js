@@ -10,7 +10,7 @@ import { HEADING_REFERENCE } from './numbering.js';
  * 颜色：标题与序号纯黑 000000；蓝色 3370FF 只出现在三处白名单——
  *   ① Hyperlink 样式 ② @提及 ③ 引用块左边框（在线就是品牌蓝）。
  */
-import { BorderStyle, ShadingType } from 'docx';
+import { ShadingType } from 'docx';
 import { FONT_SCHEMES, SINGLE_LINE, TYPO } from '../../shared/constants.js';
 
 /** 样式 id 常量：渲染层只引用这里，不写字面量 */
@@ -124,7 +124,10 @@ export function buildStyles(options) {
         name: '正文',
         quickFormat: true,
         run: { font: bodyFont, size: TYPO.body.size, color: BODY_INK },
-        paragraph: { spacing: spacing(TYPO.body.before, TYPO.body.after) },
+        paragraph: {
+          spacing: spacing(TYPO.body.before, TYPO.body.after),
+          indent: { firstLine: TYPO.body.size * 20, firstLineChars: 200 },
+        },
       },
       {
         // bullet / numbering 段落由 docx 自动应用，覆盖它以统一行距与字号
@@ -141,7 +144,6 @@ export function buildStyles(options) {
         uiPriority: 23,
         name: '有序列表',
         quickFormat: true,
-        basedOn: STYLE.body,
         paragraph: { spacing: spacing(0, 0) },
       },
       {
@@ -149,7 +151,6 @@ export function buildStyles(options) {
         uiPriority: 24,
         name: '无序列表',
         quickFormat: true,
-        basedOn: STYLE.body,
         paragraph: { spacing: spacing(0, 0) },
       },
       {
@@ -157,7 +158,6 @@ export function buildStyles(options) {
         uiPriority: 29,
         name: '待办',
         quickFormat: true,
-        basedOn: STYLE.body,
         paragraph: { spacing: spacing(0, 0) },
       },
       {
@@ -165,7 +165,6 @@ export function buildStyles(options) {
         uiPriority: 30,
         name: '标注块',
         quickFormat: true,
-        basedOn: STYLE.body,
         paragraph: { spacing: spacing(0, 0) },
       },
       {
@@ -173,7 +172,6 @@ export function buildStyles(options) {
         uiPriority: 31,
         name: '附件',
         quickFormat: true,
-        basedOn: STYLE.body,
         paragraph: { spacing: spacing(0, 0) },
       },
       {
@@ -189,7 +187,6 @@ export function buildStyles(options) {
         uiPriority: 25,
         name: '图片',
         quickFormat: true,
-        basedOn: STYLE.body,
         paragraph: { spacing: spacing(0, 0) },
       },
       {
@@ -205,7 +202,6 @@ export function buildStyles(options) {
         uiPriority: 20,
         name: '引用',
         quickFormat: true,
-        basedOn: STYLE.body,
         // 用户要求：引用正文与竖线保持同一颜色（值由 QUOTE_INK 统一控制）
         run: { font: bodyFont, size: TYPO.body.size, color: QUOTE_INK },
         paragraph: {

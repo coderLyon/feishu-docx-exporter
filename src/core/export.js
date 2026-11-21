@@ -6,7 +6,7 @@ import { createRenderContext, renderNode } from './render/index.js';
 import { buildDocx } from './docx/build.js';
 import { injectOleObjects, injectXlsxObjects } from './ole/inject.js';
 import { buildXlsx } from './ole/xlsx.js';
-import { gridFromTsv, parseSheetHtml } from './sheet/grid.js';
+import { parseSheetHtml } from './sheet/grid.js';
 import { FONT_SCHEMES, PAGE_MARGINS, PAGE_SIZES, TYPO } from '../shared/constants.js';
 
 /**
@@ -35,14 +35,39 @@ function sampleDocText(doc, limit = 3000) {
 }
 
 
-export async function exportToDocx({ url, options, resources, onProgress }) {
+function resourceBlockIds(root, byId) {
+  const expected = { image: [], sheet: [], whiteboard: [] };
+  const seen = new Set();
+  function walk(node) {
+    if (!node || seen.has(node.id)) return;
+    seen.add(node.id);
+    const kind = ['diagram', 'mindnote'].includes(node.type) ? 'whiteboard' : node.type;
+    if (Object.hasOwn(expected, kind)) expected[kind].push(node.id);
+
+    if (node.type === 'table') {
+      for (const row of node.data.rows_id ?? []) {
+        for (const column of node.data.columns_id ?? []) {
+          walk(byId.get(node.data.cell_set?.[row + column]?.block_id));
+        }
+      }
+    } else {
+      node.children.forEach(walk);
+    }
+  }
+  walk(root);
+  return expected;
+}
+
+export async function exportToDocx({ url, options, resources, collect, onProgress }) {
   onProgress?.({ stage: 'resolve', percent: 5 });
 
   const { node, doc } = await loadDocument({ url, onProgress });
-  onProgress?.({ stage: 'render', percent: 45, detail: node.title });
-
   const { root, byId } = buildBlockTree(doc);
+  const expected = resourceBlockIds(root, byId);
+  if (collect) resources = await collect(expected);
+  onProgress?.({ stage: 'render', percent: 45, detail: node.title });
   const report = { degraded: [], errors: [] };
+  if (resources?.liveSheetError) report.degraded.push(`· 表格读取失败：${resources.liveSheetError}`);
 
   const size = PAGE_SIZES[options.pageSize] ?? PAGE_SIZES.A4;
   const margin = PAGE_MARGINS[options.pageMargin] ?? PAGE_MARGINS.normal;
@@ -65,7 +90,7 @@ export async function exportToDocx({ url, options, resources, onProgress }) {
     bitables,
     options,
     resources,
-    host: location.hostname,
+    host: new URL(url ?? location.href).hostname,
     objToken: node.objToken,
     report,
     pageContentWidth,
@@ -135,24 +160,12 @@ export async function exportToDocx({ url, options, resources, onProgress }) {
 
   const children = root ? renderNode(root, ctx, 0) : [];
 
-  // 资源完整性自检：拿文档里实际有多少图片/内嵌表格/画板块，与采集到的数量比较。
-  // 采集偶尔会漏（懒渲染未完成就翻过去了），用户只看到「降级为链接」却不知道该怎么办，
-  // 这里直接给出可执行的建议。
-  const countBlocks = (type) =>
-    Object.values(doc.blockMap ?? {}).filter((b) => b?.data?.type === type).length;
-  const expect = {
-    image: countBlocks('image'),
-    sheet: countBlocks('sheet'),
-    whiteboard: countBlocks('whiteboard'),
-  };
-  const got = {
-    image: resources?.images?.length ?? 0,
-    sheet: resources?.sheets?.length ?? 0,
-    whiteboard: resources?.whiteboards?.length ?? 0,
-  };
-  const missing = Object.keys(expect).filter((k) => expect[k] > got[k]);
+  const got = Object.fromEntries(Object.keys(expected).map((kind) => [kind,
+    resources?.byBlock?.[kind]?.size ?? resources?.[`${kind}s`]?.length ?? 0,
+  ]));
+  const missing = Object.keys(expected).filter((kind) => expected[kind].length > got[kind]);
   if (missing.length) {
-    const label = t('resourceHint', ctx.lang)(missing.map((k) => `${k} ${got[k]}/${expect[k]}`).join('、'));
+    const label = t('resourceHint', ctx.lang)(missing.map((k) => `${k} ${got[k]}/${expected[k].length}`).join('、'));
     report.degraded.push(label);
   }
 
@@ -161,7 +174,6 @@ export async function exportToDocx({ url, options, resources, onProgress }) {
     title: node.title,
     children,
     options,
-    orderedInstances: ctx.ordered.instance + 1,
   });
 
   let finalBlob = blob;
@@ -171,19 +183,18 @@ export async function exportToDocx({ url, options, resources, onProgress }) {
     onProgress?.({ stage: 'pack', percent: 90, detail: `正在生成 Excel 对象（${ctx.xlsxObjects.length} 个）` });
     const sheets = [];
     for (const task of ctx.xlsxObjects) {
-      const grid = task.html
-        ? parseSheetHtml(task.html, { maxCols: 100 })
-        : gridFromTsv(task.tsv);
-      if (!grid) {
-        report.degraded.push('· 内嵌表格单元格数据解析失败，已回退为截图');
-        continue;
-      }
       try {
+        const grid = parseSheetHtml(task.html, { maxRows: 500, maxCols: 100 });
+        if (!grid) {
+          report.degraded.push('· 内嵌表格单元格数据解析失败，已保留截图');
+          continue;
+        }
         const bytes = await buildXlsx(grid, {
           sheetName: task.name || 'Sheet1',
           fontName: font.eastAsia || '微软雅黑',
+          freezeHeader: false,
         });
-        sheets.push({ index: task.index, bytes, name: task.name, preview: task.preview,
+        sheets.push({ index: task.index, bytes, name: task.name,
           widthPt: task.widthPt, heightPt: task.heightPt });
       } catch (err) {
         report.degraded.push(`· Excel 对象生成失败：${err?.message ?? err}`);
@@ -191,8 +202,10 @@ export async function exportToDocx({ url, options, resources, onProgress }) {
     }
     if (sheets.length) {
       try {
-        finalBlob = await injectXlsxObjects(finalBlob, sheets);
-        report.excelObjects = sheets.length;
+        const embedded = await injectXlsxObjects(finalBlob, sheets);
+        finalBlob = embedded.blob;
+        report.excelObjects = embedded.count;
+        if (embedded.count < sheets.length) report.degraded.push('· 部分 Excel 对象未能嵌入，已保留截图');
       } catch (err) {
         report.degraded.push(`· Excel 对象注入失败：${err?.message ?? err}`);
       }
@@ -215,10 +228,11 @@ export async function exportToDocx({ url, options, resources, onProgress }) {
     report,
     stats: {
       blocks: doc.blockSequence?.length ?? 0,
-      images: resources?.images?.length ?? 0,
-      sheets: resources?.sheets?.length ?? 0,
-      whiteboards: resources?.whiteboards?.length ?? 0,
+      images: got.image,
+      sheets: got.sheet,
+      whiteboards: got.whiteboard,
     },
+    liveSheets: resources?.liveSheets ?? null,
   };
 }
 

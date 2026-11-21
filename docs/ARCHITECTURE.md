@@ -26,7 +26,7 @@ Packer.toBlob() → content script 建 blob URL → service-worker chrome.downlo
 面板显示结果路径
 ```
 
-**资源（图片 / 内嵌表格 canvas / 画板 canvas）走另一条路**：导出前由 `content/capture.js` 滚动两遍页面完成采集，按文档出现顺序入队；渲染时由 `ctx.takeResource(kind)` 按下标消费。
+生成块树后，`content/capture.js` 读取对应的图片、内嵌表格和画板。渲染阶段按块 ID 取用资源。
 
 ## 二、模块地图
 
@@ -34,7 +34,8 @@ Packer.toBlob() → content script 建 blob URL → service-worker chrome.downlo
 | --- | --- |
 | `content/index.js` | 入口：识别文档页、连后台 port、编排导出、挂载面板（隔离世界，靠 `data-fde-ready` 属性与 DOM 事件与外界通信） |
 | `content/ui.js` + `ui.css` | Shadow DOM 面板：选项 / 进度 / 结果，选项存 `localStorage['fde-options']` |
-| `content/capture.js` | 两遍扫描 + 按 `docY` 去重排序，采集图片、内嵌表格 canvas、画板 canvas |
+| `content/capture.js` | 主动滚动以加载页面资源，关联块 ID，按需扫描补漏 |
+| `content/canvas-capture.js` | 直接读取画布，在块内滚动或截取多个视口，按 Word 版心切分长图 |
 | `core/api.js` | wiki 解析、client_vars 分页、统一请求（CSRF 双 header、错误归一化） |
 | `core/tree.js` | block_map → 块树 |
 | `core/text.js` | 富文本 attribs 解析（`*N` 属性引用、`+LEN` 36 进制长度、行内代码 `|N`） |
@@ -87,16 +88,16 @@ Packer.toBlob() → content script 建 blob URL → service-worker chrome.downlo
 - `false` → **不加**（这些表的首行是「请求参数（HEAD）」这类跨列合并的分节行）
 - 字段缺失 → 保守兜底：首行无列向合并且每格都有内容才当表头
 
-### 6. 资源按下标顺序消费
-`ctx.takeResource('image' / 'sheet' / 'whiteboard')` 依赖「采集顺序 == 文档出现顺序」。任何改变采集顺序的改动都必须同步验证配图是否错位。
+### 6. 资源与文档块匹配
+
+优先采用能对应结构化数据的 DOM 块 ID。浏览器只提供临时 ID 时，在数量一致、顺序可确认的区间按位置匹配。缺失资源由导出面板报告。
 
 ## 四、硬约束（改代码前必读）
 
-1. **必须边滚动边采集**：飞书虚拟化渲染，块移出视口即销毁；懒渲染有竞态 → 两遍扫描 + 按 `docY` 去重排序；抓取过程会滚动文档，**抓完必须恢复 scrollTop**，否则同块重复采集。
-1b. **扫描前必须先做慢速预热滚动**：内嵌电子表格、画板是重型懒挂载块，扫描节奏太快时它们还没渲染就翻过去了。实测某文档（370 块、11 张内嵌表格）预热前 **11 张全部漏采**，加 `warmUpScroll`（半步长 / 450ms，且循环里重读 `scrollHeight`——它会随内容挂载增长）后 **11/11 全部采到、降级项清零**。
+1. **边滚动边采集**：飞书会卸载离开视口的块。第一遍扫描等待资源懒加载，按需进行补漏扫描。完成后恢复文档和块内滚动位置。
 2. **画板采集只能从 canvas 反查容器**：`canvas.closest('[class*="whiteboard"]')`。曾尝试「按类名找容器」的定点采集，命中的是 `whiteboard-protal-container` 这个 0 高占位容器（永远没有 canvas），导致画板全部丢失。**画板是重型懒挂载，容器先存在、canvas 后绘制**。
 3. **画板两层等大 canvas，只合成 content 层**：合成两层会文字重影；`auxiliary` 层全空白，用「墨量探测」选层，空白时加长重试（1200/2000ms）。
-4. **画板拼接不能用滚动容器切块**：容器 scrollHeight 略大于画布时会切成 2 块，同一幅图画两次错位叠加（6.2 状态流转图重影的根因）→ 白板走 `singleTile` 单块拼接；内嵌电子表格仍需滚动拼接。
+4. **完整画布直接读取**。块内画布小于滚动范围时，按实际滚动偏移拼接，并检查末端覆盖。
 5. **飞书表格 `cell_set` 只有 merge_info + block_id**，没有单元格底色/对齐字段；表头是表级布尔 `header_row`。
 6. **`mergeClientVars` 用 `Object.assign` 合并**，后页覆盖前页；若某页返回被裁剪过的根块，顶层顺序会乱（已加固但仍需留意）。
 7. **service worker 无 `URL.createObjectURL`** → blob URL 由 content script 创建后传后台。
@@ -113,8 +114,7 @@ Packer.toBlob() → content script 建 blob URL → service-worker chrome.downlo
 16. **引用块是单格表格**（与飞书官方导出一致）：竖线用表格左边框（位置固定），
     官方数值 = 竖线 `BBBFC4`/sz18、正文 `646A73`、内边距 60/120/30/120、段前后 120、行距 288 auto。不要把边框加在 `Quote` 样式上——
     引用内的列表段落带 `numPr`，编号缩进会覆盖样式缩进，导致边框错位成「两条竖线」（已验证）。
-17. **采集必须有三道资源闸**：瓦片数 ≤9、输出画布 ≤8M 像素、采集总预算 4 分钟。
-    缺任何一道，大文档（800+ 块）会因巨型画布/超大 base64 把渲染进程拖死（已验证）。
+17. 单次拼接限制为 80 个分片，合成画布限制为 8M 像素。扫描和拼接共用 4 分钟采集预算。
 
 18. **页面必须可见，否则采不到东西**：Chrome 对被遮挡/后台窗口会节流渲染，
     `document.visibilityState` 变成 `hidden` 时飞书虚拟化只渲染个位数的块

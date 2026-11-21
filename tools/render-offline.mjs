@@ -8,6 +8,7 @@
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { fixtureDoc } from './fixture-doc.mjs';
 import { buildBlockTree } from '../src/core/tree.js';
 import { createRenderContext, renderNode } from '../src/core/render/index.js';
 import { buildDocx } from '../src/core/docx/build.js';
@@ -24,7 +25,7 @@ const samplePath = argv.find((a) => a.startsWith('--sample='))?.slice(9)
   ?? path.join(ROOT, 'samples', 'doc.json');
 const host = argv.find((a) => a.startsWith('--host='))?.slice(7) ?? 'example.feishu.cn';
 
-const sample = JSON.parse(await fs.readFile(samplePath, 'utf8'));
+const sample = argv.includes('--fixture') ? fixtureDoc() : JSON.parse(await fs.readFile(samplePath, 'utf8'));
 const doc = sample.doc ?? sample;
 
 const { root, byId } = buildBlockTree(doc);
@@ -51,7 +52,6 @@ const blob = await buildDocx({
   title: 'offline',
   children,
   options,
-  orderedInstances: ctx.ordered.instance + 1,
 });
 
 const buffer = Buffer.from(await blob.arrayBuffer());
